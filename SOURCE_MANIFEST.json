@@ -17,13 +17,15 @@
     },
     {
       "path": "compress/hyperprior.py",
-      "sha256": "943d1fd19515ebdc1f6ee2afe79e824d9882626e5871eac28e782e9001115f3e",
-      "identical_to_source": true
+      "sha256": "239ceb206569143dcc6f0b99c5be787ef5c51e73d179aac1abc8bd9ae55de287",
+      "identical_to_source": false,
+      "source_sha256": "943d1fd19515ebdc1f6ee2afe79e824d9882626e5871eac28e782e9001115f3e"
     },
     {
       "path": "compress/gain.py",
-      "sha256": "c91ebc432d2ece8eaff6bc3f10d5fdf3832ddb7d80727b318a37216b29432430",
-      "identical_to_source": true
+      "sha256": "dfe898326d7195af3c319c4a979aa59622f1c3f0b2a5f0488066383ed5c5ae64",
+      "identical_to_source": false,
+      "source_sha256": "c91ebc432d2ece8eaff6bc3f10d5fdf3832ddb7d80727b318a37216b29432430"
     },
     {
       "path": "compress/decoder.py",
@@ -66,5 +68,10 @@
     "Local test result manifest with server paths",
     "Other EmbodiedComp code and Git history",
     "Server configuration and credentials"
+  ],
+  "codec_model_version": "hypergain-v1",
+  "post_export_changes": [
+    "Add independent log_hyper_gain/log_inverse_hyper_gain and matching forward/real-coding paths; keep Encoder, Decoder, DualViewCodec and wire layouts unchanged.",
+    "Add explicit legacy identity migration, HyperGain CPU tests and compatibility/comparison documentation."
   ]
 }

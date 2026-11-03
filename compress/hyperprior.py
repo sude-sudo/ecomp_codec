@@ -50,31 +50,55 @@ class LatentHyperprior(CompressionModel):
                (self.entropy_bottleneck, self.gaussian_conditional)):
             raise RuntimeError("Call update() to initialize entropy coding CDFs")
 
-    def forward(self, y: Tensor):
+    @staticmethod
+    def _check_hyper_gain(gain):
+        if gain is not None and (not isinstance(gain, Tensor) or gain.shape != (1, 64, 1, 1)):
+            raise ValueError("Hyper gains must have shape [1, 64, 1, 1]")
+
+    def _check_hyper_pair(self, hyper_gain, inverse_hyper_gain):
+        if (hyper_gain is None) != (inverse_hyper_gain is None):
+            raise ValueError("Supply both hyper gains, or neither for the original prior")
+        self._check_hyper_gain(hyper_gain)
+        self._check_hyper_gain(inverse_hyper_gain)
+
+    def forward(self, y: Tensor, *, hyper_gain=None, inverse_hyper_gain=None):
         self._check_latent(y)
+        self._check_hyper_pair(hyper_gain, inverse_hyper_gain)
         z = self.h_a(y.abs())
+        if hyper_gain is not None:
+            z = z * hyper_gain
         z_hat, z_likelihoods = self.entropy_bottleneck(z)
+        if inverse_hyper_gain is not None:
+            z_hat = z_hat * inverse_hyper_gain
         scales = self.h_s(z_hat)
         y_hat, y_likelihoods = self.gaussian_conditional(y, scales)
         return {"y_hat": y_hat,
                 "likelihoods": {"y": y_likelihoods, "z": z_likelihoods}}
 
     @torch.no_grad()
-    def compress(self, y: Tensor):
+    def compress(self, y: Tensor, *, hyper_gain=None, inverse_hyper_gain=None):
         self._check_latent(y)
         self._check_coding()
+        self._check_hyper_pair(hyper_gain, inverse_hyper_gain)
         z = self.h_a(y.abs())
+        if hyper_gain is not None:
+            z = z * hyper_gain
         z_strings = self.entropy_bottleneck.compress(z)
         # Use only the decoded hyperlatent to predict the coding distribution.
         z_hat = self.entropy_bottleneck.decompress(z_strings, z.shape[-2:])
+        if inverse_hyper_gain is not None:
+            z_hat = z_hat * inverse_hyper_gain
         indexes = self.gaussian_conditional.build_indexes(self.h_s(z_hat))
         y_strings = self.gaussian_conditional.compress(y, indexes)
         return {"strings": [y_strings, z_strings], "shape": tuple(z.shape[-2:])}
 
     @torch.no_grad()
-    def decompress(self, strings, shape):
+    def decompress(self, strings, shape, *, inverse_hyper_gain=None):
         self._check_coding()
+        self._check_hyper_gain(inverse_hyper_gain)
         z_hat = self.entropy_bottleneck.decompress(strings[1], shape)
+        if inverse_hyper_gain is not None:
+            z_hat = z_hat * inverse_hyper_gain
         indexes = self.gaussian_conditional.build_indexes(self.h_s(z_hat))
         return self.gaussian_conditional.decompress(strings[0], indexes, z_hat.dtype)
 
@@ -117,9 +141,11 @@ class EncoderHyperprior(CompressionModel):
         return self._compress_latent(self.g_a(image), geometry)
 
     @torch.no_grad()
-    def _compress_latent(self, y: Tensor, geometry: ImageGeometry) -> bytes:
+    def _compress_latent(self, y: Tensor, geometry: ImageGeometry, *,
+                         hyper_gain=None, inverse_hyper_gain=None) -> bytes:
         """Shared transport for an analysis latent, optionally transformed by Gain."""
-        encoded = self.hyperprior.compress(y)
+        encoded = self.hyperprior.compress(y, hyper_gain=hyper_gain,
+                                           inverse_hyper_gain=inverse_hyper_gain)
         h, w = geometry.original_hw
         packet = bytearray(_HEADER.pack(_MAGIC, y.shape[0], h, w))
         for y_string, z_string in zip(*encoded["strings"]):
@@ -129,7 +155,7 @@ class EncoderHyperprior(CompressionModel):
         return bytes(packet)
 
     @torch.no_grad()
-    def decompress(self, packet: bytes):
+    def decompress(self, packet: bytes, *, inverse_hyper_gain=None):
         self.hyperprior._check_coding()
         if not isinstance(packet, bytes) or len(packet) < _HEADER.size:
             raise ValueError("Expected a complete ECH1 bytes packet")
@@ -151,7 +177,8 @@ class EncoderHyperprior(CompressionModel):
             payload_bytes += ny + nz
         if offset != len(packet):
             raise ValueError("Unexpected trailing packet bytes")
-        y_hat = self.hyperprior.decompress([ys, zs], (padded[0] // 64, padded[1] // 64))
+        y_hat = self.hyperprior.decompress([ys, zs], (padded[0] // 64, padded[1] // 64),
+                                          inverse_hyper_gain=inverse_hyper_gain)
         num_pixels = batch * h * w
         return {"y_hat": y_hat, "geometry": ImageGeometry((h, w), padded),
                 "num_bytes": len(packet), "actual_bpp": 8 * len(packet) / num_pixels,

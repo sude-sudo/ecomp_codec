@@ -13,7 +13,7 @@
 - **GainedVAE** — https://github.com/mmSir/GainedVAE
   Used as a third-party implementation reference; it is not the paper's official code.
   No GainedVAE source is vendored. `compress/gain.py` independently implements
-  learned channel gains and the geometric interpolation formula from Cui et al.,
+  learned y/z channel gain pairs and the geometric interpolation formula from Cui et al.,
   *Asymmetric Gained Deep Image Compression With Continuous Rate Adaptation*, CVPR 2021.
   Gain and Inverse Gain are independent positive log-parameterized tables; both use
   the same exponential interpolation, avoiding inconsistent reference-code variants.

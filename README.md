@@ -10,15 +10,17 @@
 compress/
   lightweight_encoder.py  RGB↔YCoCg、64 倍数补齐、共享的四级轻量 Encoder
   hyperprior.py           64 通道 Ballé Scale Hyperprior 与真实熵编码
-  gain.py                 可学习 Gain/Inverse Gain、8 档与连续指数插值
+  gain.py                 y/z 各自可学习 Gain/Inverse Gain、8 档与连续指数插值
   decoder.py              空间/时间上下文融合、四级上采样、显式历史状态
   dual_view_codec.py      完整双视角前向、帧码流封装与解码入口
- tests/                   24 项 Codec CPU 单元/集成测试
+ tests/                   32 项 Codec CPU 单元/集成测试
  tools/smoke_dual_view_codec.py  外部 RGB 图片的冒烟/小规模过拟合脚本
 ```
 
 主/腕 RGB → YCoCg → 共享 Encoder (`3→32→48→64→64`) → Gain →
 Hyperprior 编码 y/z → bytes → 熵解码 → Inverse Gain → 自建 Decoder → 两路 RGB。
+超先验路径为 `h_a(abs(y_g)) → HyperGain → EntropyBottleneck → InverseHyperGain → h_s`；
+训练、真实压缩和解码使用相同几何插值，每个相机四组增益共用该相机的 `(level, alpha)`。
 256×256 输入的 latent 为 `B×64×16×16`。EntropyBottleneck、GaussianConditional
 及 CDF 更新直接使用 CompressAI，未修改其底层算法；不构建或调用 Ballé `g_s`。
 
@@ -70,6 +72,29 @@ for frame_index in range(3):
 Gain 的 `alpha=0` 选当前档，`alpha=1` 选下一档；最后一档只允许 alpha=0。
 编码器和解码器使用相同指数插值，码流携带档位/系数。实际 BPP 为完整双路帧字节数
 乘 8，除以两路原始像素总数，包含熵码流与所有包头；估计 BPP 仅来自 likelihood。
+
+### 模型版本与旧 checkpoint / 码流
+
+本轮模型为 **hypergain-v1**；`7b807fb` 是仅含 y-Gain 的旧版本。新增
+`log_hyper_gain` 和 `log_inverse_hyper_gain`，各为 `[8,64]` 零初始化表，初始因子为 1。
+`LatentGain.factors()` 和无 Gain 的 Hyperprior 调用保持兼容，ECH1/ECG1/ECD1 字节结构不变。
+
+默认严格加载旧 checkpoint 会报告缺少两个参数；不会静默填值。显式迁移平铺的 state_dict：
+
+```python
+from compress.gain import with_identity_hypergains
+old_state = torch.load("old_checkpoint.pt", map_location="cpu", weights_only=True)
+model.load_state_dict(with_identity_hypergains(old_state), strict=True)
+```
+
+辅助函数不修改原字典，仅在两张超增益表都缺失时补零；不覆盖已有表，缺一张则报错。
+支持 LatentGain、GainedEncoderHyperprior、DualViewCodec 的键前缀；其余缺键/形状仍由严格加载检查。
+新 checkpoint 可正常严格加载；旧代码不能直接读取新增参数，恢复优化时也应重建 optimizer。
+
+只有 **相同旧权重/CDF + 恒等超增益** 才保证旧码流逐字节及重建兼容。学习到非恒等超增益后，
+必须共享相同新 checkpoint；不能把旧流交给任意新模型，或把新流交给旧模型。
+现有包头不携带模型版本/hash，无法自动检测这种错配，必须由调用方同步模型身份。
+不需要另传 64 通道增益表或独立 z 档位。详细对照与验收数据见 `reports/hypergain_comparison.md`。
 
 ### 后续训练接口
 
