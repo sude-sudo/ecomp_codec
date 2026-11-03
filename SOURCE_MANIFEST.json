@@ -1,0 +1,70 @@
+{
+  "source_repository": "https://github.com/Jianbo-maker/EmbodiedComp",
+  "source_branch": "codec",
+  "source_snapshot": "850a33688919eadb81edc68f8952e3bb9108c97f",
+  "accepted_module_commits": [
+    "4c2aa07",
+    "843bd76",
+    "9aa360e",
+    "8cf1986",
+    "850a336"
+  ],
+  "files": [
+    {
+      "path": "compress/lightweight_encoder.py",
+      "sha256": "c28b913dfdd9c48f6e8d25772e76f679db59c028627d92835036c92ffbfe3b1c",
+      "identical_to_source": true
+    },
+    {
+      "path": "compress/hyperprior.py",
+      "sha256": "943d1fd19515ebdc1f6ee2afe79e824d9882626e5871eac28e782e9001115f3e",
+      "identical_to_source": true
+    },
+    {
+      "path": "compress/gain.py",
+      "sha256": "c91ebc432d2ece8eaff6bc3f10d5fdf3832ddb7d80727b318a37216b29432430",
+      "identical_to_source": true
+    },
+    {
+      "path": "compress/decoder.py",
+      "sha256": "4affac49f20bf2a0019ba9664b4e624845d057ad5dab542413fda4e4427cbb33",
+      "identical_to_source": true
+    },
+    {
+      "path": "compress/dual_view_codec.py",
+      "sha256": "da00fc2f726e73b6c53fb7375670be5b9bb2fac4400021eab000e52048b4039e",
+      "identical_to_source": true
+    },
+    {
+      "path": "tests/test_lightweight_encoder.py",
+      "sha256": "048433e9273e99b893fa2fdf465fe6d41eb8cbdbb658792446be7e7448e05979",
+      "identical_to_source": true
+    },
+    {
+      "path": "tests/test_hyperprior.py",
+      "sha256": "89cff412b6ea6c63eebf5d2312fd8ee6ced3fa9cee26841c19420dc5c1ad5015",
+      "identical_to_source": true
+    },
+    {
+      "path": "tests/test_gain.py",
+      "sha256": "0b3b31ca44a05e59968046c031ff0032e2de0143f5b4128ebb0d7f114cb9fa51",
+      "identical_to_source": true
+    },
+    {
+      "path": "tests/test_dual_view_codec.py",
+      "sha256": "5cb70dbc36b46147fdbaaa36517fdbf911b4ab1f0af813aab44639c657e0fdba",
+      "identical_to_source": true
+    }
+  ],
+  "packaging_changes": [
+    "Smoke script now requires --source-dir and writes under this repository outputs/. Network definitions and codec tests unchanged.",
+    "Added README, dependency pins, package marker, ignore rules and third-party notices."
+  ],
+  "excluded": [
+    "Datasets and images",
+    "Model weights and generated outputs",
+    "Local test result manifest with server paths",
+    "Other EmbodiedComp code and Git history",
+    "Server configuration and credentials"
+  ]
+}

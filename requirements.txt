@@ -1,0 +1,7 @@
+# CPU wheel installation command is in README.md.
+torch==2.5.1
+torchvision==0.20.1
+compressai==1.2.8
+numpy>=1.24,<2
+Pillow>=10,<13
+matplotlib>=3.8,<4
