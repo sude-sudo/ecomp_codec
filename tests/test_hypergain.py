@@ -178,7 +178,9 @@ class HyperGainAcceptance(unittest.TestCase):
                 continue
             self.assertIsNotNone(p.grad, name)
             self.assertTrue(torch.isfinite(p.grad).all(), name)
-            self.assertGreater(p.grad.abs().sum().item(), 0, name)
+            # LDMIC keys.bias cancels under spatial softmax, hence may be zero.
+            if not name.endswith("keys.bias"):
+                self.assertGreater(p.grad.abs().sum().item(), 0, name)
         before = {name: p.detach().clone() for name, p in model.analysis.gain.named_parameters()}
         torch.optim.Adam([p for p in model.parameters() if p is not quantiles], lr=1e-4).step()
         for name, p in model.analysis.gain.named_parameters():

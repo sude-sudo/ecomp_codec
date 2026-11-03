@@ -1,16 +1,39 @@
-"""Lightweight reconstruction with LDMIC-style decoded-feature context transfer.
+"""decoder-v2: LDMIC spatial decoder adapted to this project's decoded latents.
 
-Design reference: Xinjie-Q/LDMIC models/ldmic.py, JointContextTransfer and
-EfficientAttention (https://github.com/Xinjie-Q/LDMIC). Attention is performed
-only at H/16, with a small key/value channel summary rather than an NxN map.
-No Ballé synthesis transform is instantiated or used.
+JCT structure, EfficientAttention math and decoder_1/decoder_2 are adapted from
+Xinjie-Q/LDMIC, commit 4cf7318505a001c13d9946581f77e2b4af224246,
+models/ldmic.py. Copyright (c) 2023 Xinjie-Q, MIT License (full notice below).
+Necessary adaptations: M=N=64, separate query/reference spatial dimensions,
+and the existing RGB-logits/YCoCg conversion, sigmoid and crop contract.
+The detached causal history and main-only temporal residual after atten_4 are
+project extensions, not part of LDMIC. This is not a full paper reproduction.
 """
+
+# MIT License
+# Copyright (c) 2023 Xinjie-Q
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
 
 from dataclasses import dataclass
 
 import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
+from compressai.layers import GDN, ResidualBlock
+from compressai.models.utils import deconv
 
 from .lightweight_encoder import ImageGeometry, ycocg_to_rgb
 
@@ -35,26 +58,72 @@ class DecoderState:
     history: tuple[DecodedFrame, ...]
 
 
-class EfficientCrossAttention(nn.Module):
-    """Two-head context transfer, supporting unequal query/reference resolutions."""
+class EfficientAttention(nn.Module):
+    """LDMIC factorized attention with independent query/reference token counts."""
 
-    def __init__(self):
+    def __init__(self, key_in_channels=64, query_in_channels=64,
+                 key_channels=8, head_count=2, value_channels=16):
         super().__init__()
-        self.query = nn.Conv2d(64, 8, 1)
-        self.key = nn.Conv2d(64, 8, 1, bias=False)
-        self.value = nn.Conv2d(64, 16, 1)
-        self.project = nn.Conv2d(16, 64, 1)
+        self.in_channels = query_in_channels
+        self.key_channels, self.head_count, self.value_channels = key_channels, head_count, value_channels
+        self.keys = nn.Conv2d(key_in_channels, key_channels, 1)
+        self.queries = nn.Conv2d(query_in_channels, key_channels, 1)
+        self.values = nn.Conv2d(key_in_channels, value_channels, 1)
+        self.reprojection = nn.Conv2d(value_channels, query_in_channels, 1)
 
-    def forward(self, query: Tensor, references: tuple[Tensor, ...]) -> Tensor:
+    def _attend(self, query, references):
         b, _, h, w = query.shape
-        q = self.query(query).reshape(b, 2, 4, h * w).softmax(dim=-2)
-        k = torch.cat([self.key(r).flatten(2) for r in references], dim=-1)
-        v = torch.cat([self.value(r).flatten(2) for r in references], dim=-1)
-        k = k.reshape(b, 2, 4, -1).softmax(dim=-1)
-        v = v.reshape(b, 2, 8, -1)
+        if not references or any(r.shape[0] != b for r in references):
+            raise ValueError("Attention needs nonempty references with the query batch size")
+        heads = self.head_count
+        q = self.queries(query).reshape(b, heads, self.key_channels // heads, h*w).softmax(dim=-2)
+        k = torch.cat([self.keys(r).flatten(2) for r in references], dim=-1)
+        v = torch.cat([self.values(r).flatten(2) for r in references], dim=-1)
+        k = k.reshape(b, heads, self.key_channels // heads, -1).softmax(dim=-1)
+        v = v.reshape(b, heads, self.value_channels // heads, -1)
         summary = k @ v.transpose(-1, -2)
         context = summary.transpose(-1, -2) @ q
-        return self.project(context.reshape(b, 16, h, w))
+        return self.reprojection(context.reshape(b, self.value_channels, h, w))
+
+    def forward(self, target: Tensor, reference: Tensor) -> Tensor:
+        return self._attend(target, (reference,))
+
+
+class EfficientCrossAttention(EfficientAttention):
+    """Retain the old tuple-of-references import/API for the temporal branch.
+
+    Attribute aliases are properties, so state_dict contains no duplicate keys.
+    Parameter names now follow LDMIC; old Decoder weights are not compatible.
+    """
+
+    query = property(lambda self: self.queries)
+    key = property(lambda self: self.keys)
+    value = property(lambda self: self.values)
+    project = property(lambda self: self.reprojection)
+
+    def forward(self, query: Tensor, references: tuple[Tensor, ...]) -> Tensor:
+        return self._attend(query, references)
+
+
+class JointContextTransfer(nn.Module):
+    """Original LDMIC JCT block structure, shared in both view directions."""
+
+    def __init__(self, channels=64):
+        super().__init__()
+        self.rb1 = ResidualBlock(channels, channels)
+        self.rb2 = ResidualBlock(channels, channels)
+        self.attn = EfficientAttention(channels, channels, channels//8, 2, channels//4)
+        self.refine = nn.Sequential(ResidualBlock(channels*2, channels),
+                                    ResidualBlock(channels, channels))
+
+    def forward(self, main, wrist):
+        identity_main, identity_wrist = main, wrist
+        main_feature = self.rb2(self.rb1(main))
+        wrist_feature = self.rb2(self.rb1(wrist))
+        context_main = self.attn(main_feature, wrist_feature)
+        context_wrist = self.attn(wrist_feature, main_feature)
+        return (identity_main + self.refine(torch.cat((context_main, main_feature), dim=1)),
+                identity_wrist + self.refine(torch.cat((context_wrist, wrist_feature), dim=1)))
 
 
 class SpatioTemporalDecoder(nn.Module):
@@ -65,21 +134,20 @@ class SpatioTemporalDecoder(nn.Module):
         if isinstance(history_size, bool) or not isinstance(history_size, int) or history_size < 1:
             raise ValueError("history_size must be a positive integer")
         self.history_size = history_size
+        self.atten_3 = JointContextTransfer(64)
+        self.decoder_1 = nn.Sequential(deconv(64, 64, kernel_size=5, stride=2), GDN(64, inverse=True),
+                                       deconv(64, 64, kernel_size=5, stride=2), GDN(64, inverse=True))
+        self.atten_4 = JointContextTransfer(64)
+        self.decoder_2 = nn.Sequential(deconv(64, 64, kernel_size=5, stride=2), GDN(64, inverse=True),
+                                       deconv(64, 3, kernel_size=5, stride=2))
+        # Preserve H/16 history extraction; inject only AFTER the last spatial JCT.
         self.content = nn.Sequential(nn.Conv2d(64, 64, 3, padding=1), nn.GELU())
         self.history_image = nn.Conv2d(3, 64, 1)
-        self.spatial = EfficientCrossAttention()
         self.temporal = EfficientCrossAttention()
-        self.fuse = nn.Sequential(nn.Conv2d(192, 64, 1), nn.GELU(),
-                                  nn.Conv2d(64, 64, 3, padding=1), nn.GELU())
-        channels = (64, 48, 32, 16, 3)
-        self.upsample = nn.ModuleList(nn.Conv2d(cin, cout, 3, padding=1)
-                                      for cin, cout in zip(channels[:-1], channels[1:]))
+        self.temporal_project = nn.Conv2d(64, 64, 1)
 
     def _reconstruct(self, feature: Tensor, geometry: ImageGeometry) -> Tensor:
-        for i, layer in enumerate(self.upsample):
-            feature = layer(F.interpolate(feature, scale_factor=2, mode="nearest"))
-            if i < len(self.upsample) - 1:
-                feature = F.gelu(feature)
+        feature = self.decoder_2(feature)
         # The head predicts YCoCg-domain logits; convert to RGB before bounding.
         return geometry.crop(ycocg_to_rgb(feature).sigmoid())
 
@@ -103,25 +171,21 @@ class SpatioTemporalDecoder(nn.Module):
             history = state.history[-self.history_size:]
         for entry in history:
             if (entry.latent.shape[0] != main.shape[0] or entry.rgb.shape[0] != main.shape[0]
-                    or entry.latent.device != main.device or entry.latent.dtype != main.dtype):
+                    or entry.latent.device != main.device or entry.latent.dtype != main.dtype
+                    or entry.rgb.device != main.device or entry.rgb.dtype != main.dtype):
                 raise ValueError("History batch/device/dtype changed; restart at frame 0")
 
-        main_feature, wrist_feature = self.content(main), self.content(wrist)
-        # Both contexts use base decoded features, so neither view waits on the
-        # other's reconstruction. Wrist remains independently reconstructible.
-        spatial_main = self.spatial(main_feature, (wrist_feature,))
-        spatial_wrist = self.spatial(wrist_feature, (main_feature,))
+        main_feature, wrist_feature = self.atten_3(main, wrist)
+        main_feature, wrist_feature = self.atten_4(self.decoder_1(main_feature),
+                                                 self.decoder_1(wrist_feature))
         if history:
             references = tuple(self.content(entry.latent) + self.history_image(
                 F.adaptive_avg_pool2d(entry.rgb, entry.latent.shape[-2:])) for entry in history)
-            temporal = self.temporal(main_feature, references)
-        else:
-            temporal = torch.zeros_like(main_feature)
-        main_fused = self.fuse(torch.cat((main_feature, spatial_main, temporal), dim=1))
-        wrist_fused = self.fuse(torch.cat((wrist_feature, spatial_wrist,
-                                         torch.zeros_like(wrist_feature)), dim=1))
-        main_rgb = self._reconstruct(main_fused, main_geometry)
-        wrist_rgb = self._reconstruct(wrist_fused, wrist_geometry)
+            temporal = self.temporal(self.content(main), references)
+            main_feature = main_feature + self.temporal_project(
+                F.interpolate(temporal, size=main_feature.shape[-2:], mode="nearest"))
+        main_rgb = self._reconstruct(main_feature, main_geometry)
+        wrist_rgb = self._reconstruct(wrist_feature, wrist_geometry)
         # Copy as well as detach: caller mutation of outputs cannot corrupt cache.
         entry = DecodedFrame(main.detach().clone(), main_rgb.detach().clone())
         next_state = DecoderState(episode_id, frame_index + 1,

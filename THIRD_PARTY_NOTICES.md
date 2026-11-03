@@ -8,8 +8,12 @@
   No installed CompressAI package files or pretrained weights are vendored.
 - **LDMIC** — https://github.com/Xinjie-Q/LDMIC
   Copyright (c) 2023 Xinjie-Q. MIT license: `licenses/LDMIC-LICENSE`.
-  `compress/decoder.py` follows the JointContextTransfer / EfficientAttention design
-  with an independently constructed, smaller reconstruction network and causal history.
+  `compress/decoder.py` adapts the substantive JointContextTransfer / EfficientAttention
+  and decoder_1/decoder_2 code/structure at commit 4cf7318505a001c13d9946581f77e2b4af224246.
+  The decoder module retains the MIT notice. `tests/fixtures/ldmic_official.py` contains
+  attributed regular-forward class excerpts as a numerical oracle, not a rewritten oracle.
+  Changes: M=N=64, independent query/reference spatial shapes, project RGB output
+  and a separate main-only temporal residual. This is not a full LDMIC reproduction.
 - **GainedVAE** — https://github.com/mmSir/GainedVAE
   Used as a third-party implementation reference; it is not the paper's official code.
   No GainedVAE source is vendored. `compress/gain.py` independently implements

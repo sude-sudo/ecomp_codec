@@ -2,7 +2,8 @@
 
 用于源码审查的双相机时空可变码率 Codec。代码从 EmbodiedComp 的 `codec`
 分支 `850a336` 独立导出，不包含原项目历史、VLA、数据、权重或实验输出。
-目前已完成功能与小规模过拟合验证，尚未正式训练，不代表已达到可用的压缩质量。
+旧简化 Decoder 曾做功能与小规模过拟合验证；当前 decoder-v2 只做 CPU 正确性和短时延验证，
+必须重新训练，尚不代表已达到可用压缩质量。
 
 ## 目录与数据流
 
@@ -11,9 +12,9 @@ compress/
   lightweight_encoder.py  RGB↔YCoCg、64 倍数补齐、共享的四级轻量 Encoder
   hyperprior.py           64 通道 Ballé Scale Hyperprior 与真实熵编码
   gain.py                 y/z 各自可学习 Gain/Inverse Gain、8 档与连续指数插值
-  decoder.py              空间/时间上下文融合、四级上采样、显式历史状态
+  decoder.py              双尺度 LDMIC JCT、四级 Deconv/IGDN、主路时间残差
   dual_view_codec.py      完整双视角前向、帧码流封装与解码入口
- tests/                   32 项 Codec CPU 单元/集成测试
+ tests/                   40 项 Codec CPU 单元/集成测试及固定官方 oracle/旧基线
  tools/smoke_dual_view_codec.py  外部 RGB 图片的冒烟/小规模过拟合脚本
 ```
 
@@ -24,10 +25,13 @@ Hyperprior 编码 y/z → bytes → 熵解码 → Inverse Gain → 自建 Decode
 256×256 输入的 latent 为 `B×64×16×16`。EntropyBottleneck、GaussianConditional
 及 CDF 更新直接使用 CompressAI，未修改其底层算法；不构建或调用 Ballé `g_s`。
 
-Decoder 在 H/16 特征层执行 LDMIC 风格的两头 Efficient Cross-Attention。
-当前两路已解码基础特征先做双向空间融合，不相互等待重建结果。
-主路将当前特征、空间上下文、时间上下文 Concat 后重建；时间参考只来自最近
-2 帧已解码主路 latent 与重建 RGB。两路共享上采样网络，输出原尺寸、[0,1] RGB。
+Decoder 空间主干按 LDMIC 固定提交 `4cf7318` 适配为 M=N=64：
+`JCT@H/16 → Deconv+IGDN×2 → JCT@H/4 → Deconv+IGDN → Deconv(3)`。
+每个 JCT 保留 rb1/rb2、两头 EfficientAttention、两块 refine ResidualBlock 和外层残差，
+两视角共享权重；两级 JCT 参数独立。不等分辨率 Attention 保留各自 token 数，不 resize 视角。
+时间参考只来自最近 2 帧已解码主路 latent 与重建 RGB，在 H/16 提取上下文，
+对齐后只加到第二级 JCT 后的主路特征。腕部不依赖历史，首帧严格跳过时间残差。
+输出保留项目特有的 `ycocg_to_rgb(logits).sigmoid()` 和 crop，不属于原版 LDMIC。
 历史缓存复制并 detach；当前帧与所有网络模块仍可反向传播，默认不跨帧回传历史梯度。
 
 ## 安装与 CPU 测试
@@ -75,7 +79,7 @@ Gain 的 `alpha=0` 选当前档，`alpha=1` 选下一档；最后一档只允许
 
 ### 模型版本与旧 checkpoint / 码流
 
-本轮模型为 **hypergain-v1**；`7b807fb` 是仅含 y-Gain 的旧版本。新增
+当前组合版本为 **hypergain-v1 / decoder-v2**；`7b807fb` 是仅含 y-Gain 的旧版本。此前新增
 `log_hyper_gain` 和 `log_inverse_hyper_gain`，各为 `[8,64]` 零初始化表，初始因子为 1。
 `LatentGain.factors()` 和无 Gain 的 Hyperprior 调用保持兼容，ECH1/ECG1/ECD1 字节结构不变。
 
@@ -84,17 +88,30 @@ Gain 的 `alpha=0` 选当前档，`alpha=1` 选下一档；最后一档只允许
 ```python
 from compress.gain import with_identity_hypergains
 old_state = torch.load("old_checkpoint.pt", map_location="cpu", weights_only=True)
-model.load_state_dict(with_identity_hypergains(old_state), strict=True)
+# 对完整旧 Codec 只迁移分析端：旧 decoder-v1 不能严格加载到 decoder-v2。
+analysis = {k[len("analysis."):]: v for k, v in old_state.items() if k.startswith("analysis.")}
+model.analysis.load_state_dict(with_identity_hypergains(analysis), strict=True)
 ```
 
 辅助函数不修改原字典，仅在两张超增益表都缺失时补零；不覆盖已有表，缺一张则报错。
 支持 LatentGain、GainedEncoderHyperprior、DualViewCodec 的键前缀；其余缺键/形状仍由严格加载检查。
-新 checkpoint 可正常严格加载；旧代码不能直接读取新增参数，恢复优化时也应重建 optimizer。
+同结构新 checkpoint 可正常严格加载；旧代码不能直接读取新增参数，恢复优化时也应重建 optimizer。
+
+`7db7e58` 的旧 Decoder 结构、权重与缓存不能等价迁移到 decoder-v2；须重新初始化/训练
+新 Decoder 并 reset 历史。分析端可按上例严格加载（已有 HyperGain 表不会被覆盖）。
+固定相同分析权重/CDF/帧头时，新旧 Decoder 的 compress 字节完全一致，但重建图像不等价。
+新模型部署时仍须让发送/接收端共享同一 Decoder 版本与权重。
 
 只有 **相同旧权重/CDF + 恒等超增益** 才保证旧码流逐字节及重建兼容。学习到非恒等超增益后，
 必须共享相同新 checkpoint；不能把旧流交给任意新模型，或把新流交给旧模型。
 现有包头不携带模型版本/hash，无法自动检测这种错配，必须由调用方同步模型身份。
 不需要另传 64 通道增益表或独立 z 档位。详细对照与验收数据见 `reports/hypergain_comparison.md`。
+Decoder 逐层结构、官方数值 oracle、必要差异、参数/MAC/时延见 `reports/ldmic_decoder_alignment.md`。
+
+小规模 CPU 结构/时延对照（不训练，默认各测项 1 次预热、3 次测量）：
+`OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 python tools/benchmark_decoder_alignment.py`。
+旧基线只在 `tests/fixtures/decoder_v1.py` 保留用于对照，生产入口始终使用新 Decoder。
+`EfficientCrossAttention` 导入及旧投影属性别名仍可用；参数存储名改为官方风格，不能据此复用旧权重。
 
 ### 后续训练接口
 
@@ -126,6 +143,6 @@ OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 python tools/smoke_dual_view_codec.py \
 参考 [CompressAI](https://github.com/InterDigitalInc/CompressAI) 的 Ballé 2018
 ScaleHyperprior、[GainedVAE](https://github.com/mmSir/GainedVAE) 与
 [Cui et al., CVPR 2021, Eq. (8)](https://openaccess.thecvf.com/content/CVPR2021/html/Cui_Asymmetric_Gained_Deep_Image_Compression_With_Continuous_Rate_Adaptation_CVPR_2021_paper.html)、
-[LDMIC 官方源码](https://github.com/Xinjie-Q/LDMIC/blob/main/models/ldmic.py)。
+[LDMIC 固定官方源码](https://github.com/Xinjie-Q/LDMIC/blob/4cf7318505a001c13d9946581f77e2b4af224246/models/ldmic.py)。
 第三方依赖/设计参考及许可证见 `THIRD_PARTY_NOTICES.md` 与 `licenses/`。
 导出文件校验信息见 `SOURCE_MANIFEST.json`。

@@ -29,8 +29,9 @@
     },
     {
       "path": "compress/decoder.py",
-      "sha256": "4affac49f20bf2a0019ba9664b4e624845d057ad5dab542413fda4e4427cbb33",
-      "identical_to_source": true
+      "sha256": "2064dcb7f48802d59463d0f2b95a4b3e984ad2904993161683cece02e0cdc3d9",
+      "identical_to_source": false,
+      "source_sha256": "4affac49f20bf2a0019ba9664b4e624845d057ad5dab542413fda4e4427cbb33"
     },
     {
       "path": "compress/dual_view_codec.py",
@@ -54,8 +55,9 @@
     },
     {
       "path": "tests/test_dual_view_codec.py",
-      "sha256": "5cb70dbc36b46147fdbaaa36517fdbf911b4ab1f0af813aab44639c657e0fdba",
-      "identical_to_source": true
+      "sha256": "21144800a92ff6e38712ecba556b2678a7ca970a28c461ac42571a0d10c8b125",
+      "identical_to_source": false,
+      "source_sha256": "5cb70dbc36b46147fdbaaa36517fdbf911b4ab1f0af813aab44639c657e0fdba"
     }
   ],
   "packaging_changes": [
@@ -69,9 +71,10 @@
     "Other EmbodiedComp code and Git history",
     "Server configuration and credentials"
   ],
-  "codec_model_version": "hypergain-v1",
+  "codec_model_version": "hypergain-v1/decoder-v2",
   "post_export_changes": [
     "Add independent log_hyper_gain/log_inverse_hyper_gain and matching forward/real-coding paths; keep Encoder, Decoder, DualViewCodec and wire layouts unchanged.",
-    "Add explicit legacy identity migration, HyperGain CPU tests and compatibility/comparison documentation."
+    "Add explicit legacy identity migration, HyperGain CPU tests and compatibility/comparison documentation.",
+    "Align decoder-v2 spatial JCT/EfficientAttention/Deconv+IGDN to LDMIC 4cf7318 at M=N=64; keep main-only causal temporal residual after the second JCT. Analysis and wire layouts unchanged."
   ]
 }

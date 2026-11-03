@@ -68,7 +68,10 @@ class DecoderAcceptance(unittest.TestCase):
         for name, p in self.decoder.named_parameters():
             self.assertIsNotNone(p.grad, name)
             self.assertTrue(torch.isfinite(p.grad).all(), name)
-            self.assertGreater(p.grad.abs().sum().item(), 0, name)
+            # Official key bias is a spatially constant softmax offset: its true
+            # gradient is zero. Keep it for source fidelity; still require finiteness.
+            if not name.endswith("keys.bias"):
+                self.assertGreater(p.grad.abs().sum().item(), 0, name)
         self.assertGreater(main.grad.abs().sum().item(), 0)
         self.assertGreater(wrist.grad.abs().sum().item(), 0)
         self.assertIsNone(old.grad)
@@ -103,7 +106,8 @@ class DualViewAcceptance(unittest.TestCase):
                         continue
                     self.assertIsNotNone(parameter.grad, name)
                     self.assertTrue(torch.isfinite(parameter.grad).all(), name)
-                    self.assertGreater(parameter.grad.abs().sum().item(), 0, name)
+                    if not name.endswith("keys.bias"):
+                        self.assertGreater(parameter.grad.abs().sum().item(), 0, name)
             state = result["state"]
             self.assertEqual(len(state.history), min(i + 1, 2))
         parameter = self.model.decoder.temporal.value.weight
