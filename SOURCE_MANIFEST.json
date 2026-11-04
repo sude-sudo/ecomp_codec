@@ -29,7 +29,7 @@
     },
     {
       "path": "compress/decoder.py",
-      "sha256": "3092f3f2001401108aa4bd34d85514296b49f03a5683b6cb05854f303a318e6e",
+      "sha256": "03aa7ec500e4ce4a4f64b3bdaffe5039d46d4802c674ea7fd75a17debdf47f66",
       "identical_to_source": false,
       "source_sha256": "4affac49f20bf2a0019ba9664b4e624845d057ad5dab542413fda4e4427cbb33"
     },
@@ -66,12 +66,27 @@
     },
     {
       "path": "tests/test_dual_temporal.py",
-      "sha256": "5d859f7ef6b708a060dffd98bb0803c0feedba11b7dcefddf0c38dbfe15c15ae",
+      "sha256": "b81a24b3890b0817f41a0ff1fb30a6de1ce25b052b6a37c293b593c3777cc4b9",
       "identical_to_source": false
     },
     {
       "path": "tools/benchmark_dual_temporal.py",
-      "sha256": "e4c4f15863b667d60b8ac234cb099d8b1f12fe925d0973afbde5efee58f9fb01",
+      "sha256": "a872c4f5bb2c1466f024b59d8d338d8419c77567fbfaac5f10a4af15fe0ece55",
+      "identical_to_source": false
+    },
+    {
+      "path": "tests/fixtures/decoder_v3.py",
+      "sha256": "6f2dc8c6b39b26a44001a2cd363deb155d0ce86d08b3bfd6a3119dcd2a380737",
+      "identical_to_source": false
+    },
+    {
+      "path": "tests/test_history_fusion_age.py",
+      "sha256": "e771ee64e6593a274cc075552545291bd3f86bd05f1f0a65b8084e6ac44705d8",
+      "identical_to_source": false
+    },
+    {
+      "path": "tools/benchmark_history_fusion.py",
+      "sha256": "3940d6c383d7a40b8ff9c904ca3c965191c457c2e2a116a9ac41206a380141aa",
       "identical_to_source": false
     }
   ],
@@ -86,11 +101,12 @@
     "Other EmbodiedComp code and Git history",
     "Server configuration and credentials"
   ],
-  "codec_model_version": "hypergain-v1/decoder-v3",
+  "codec_model_version": "hypergain-v1/decoder-v4",
   "post_export_changes": [
     "Add independent log_hyper_gain/log_inverse_hyper_gain and matching forward/real-coding paths; keep Encoder, Decoder, DualViewCodec and wire layouts unchanged.",
     "Add explicit legacy identity migration, HyperGain CPU tests and compatibility/comparison documentation.",
     "Align decoder-v2 spatial JCT/EfficientAttention/Deconv+IGDN to LDMIC 4cf7318 at M=N=64; keep main-only causal temporal residual after the second JCT. Analysis and wire layouts unchanged.",
-    "Add independent wrist temporal attention/project after atten_4; paired per-view detached history, explicit v2 warm-start/state-reset documentation, CPU regression tests and fixed v2/v3 performance comparison. Existing spatial blocks, analysis and wire layouts unchanged."
+    "Add independent wrist temporal attention/project after atten_4; paired per-view detached history, explicit v2 warm-start/state-reset documentation, CPU regression tests and fixed v2/v3 performance comparison. Existing spatial blocks, analysis and wire layouts unchanged.",
+    "Replace per-view historical latent/RGB addition with shared sum-initialized 128-to-64 fusion convolution and zero-initialized relative age embedding. Preserve spatial/attention formulas, independent view branches, state schemas, analysis and packet layouts. Add explicit v3 migration, CPU tests and fixed v3/v4 comparison."
   ]
 }

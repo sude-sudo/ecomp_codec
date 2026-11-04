@@ -2,8 +2,8 @@
 
 用于源码审查的双相机时空可变码率 Codec。代码从 EmbodiedComp 的 `codec`
 分支 `850a336` 独立导出，不包含原项目历史、VLA、数据、权重或实验输出。
-旧简化 Decoder 曾做功能与小规模过拟合验证；本次 decoder-v3 双路时序变更只做 CPU 正确性和短时延验证，
-必须重新训练，尚不代表已达到可用压缩质量。
+旧简化 Decoder 曾做功能与小规模过拟合验证；本次 decoder-v4 历史模态融合与帧龄编码
+只做 CPU 正确性和短时延验证，新增能力尚未经正式训练或质量评估。
 
 ## 目录与数据流
 
@@ -12,9 +12,9 @@ compress/
   lightweight_encoder.py  RGB↔YCoCg、64 倍数补齐、共享的四级轻量 Encoder
   hyperprior.py           64 通道 Ballé Scale Hyperprior 与真实熵编码
   gain.py                 y/z 各自可学习 Gain/Inverse Gain、8 档与连续指数插值
-  decoder.py              双尺度 LDMIC JCT、四级 Deconv/IGDN、双路独立时间残差
+  decoder.py              双尺度 LDMIC JCT、双路独立时间残差、Concat 融合与帧龄编码
   dual_view_codec.py      完整双视角前向、帧码流封装与解码入口
- tests/                   45 项 Codec CPU 单元/集成测试及固定官方 oracle/旧基线
+ tests/                   53 项 Codec CPU 单元/集成测试及固定官方 oracle/旧基线
  tools/smoke_dual_view_codec.py  外部 RGB 图片的冒烟/小规模过拟合脚本
 ```
 
@@ -30,8 +30,10 @@ Decoder 空间主干按 LDMIC 固定提交 `4cf7318` 适配为 M=N=64：
 每个 JCT 保留 rb1/rb2、两头 EfficientAttention、两块 refine ResidualBlock 和外层残差，
 两视角共享权重；两级 JCT 参数独立。不等分辨率 Attention 保留各自 token 数，不 resize 视角。
 每个历史条目同步保存主路/腕部的 latent 与重建 RGB，默认最近 2 帧。
-两路分别只读取本视角历史，使用共享的 `content(latent) + history_image(pool(rgb))`
-特征提取器，以及参数独立的 `temporal` / `temporal_wrist` Attention。
+两路分别只读取本视角历史，使用共享的 `content(latent)` 与 `history_image(pool(rgb))`
+提取两组 64 通道特征，Concat 成 128 通道后经共享 `history_fuse` 1×1 卷积回到 64 通道，
+再加共享帧龄嵌入（最新历史 age=1，次新 age=2），作为 K/V 参考。
+Q 仍来自当前 latent 的 `content`，`temporal` / `temporal_wrist` Attention 参数独立。
 两路都在 H/16 提取时间上下文，按各自分辨率上采样，再分别通过
 `temporal_project` / `temporal_project_wrist` 加到第二级 JCT 后的 H/4 特征，
 最后进入共享的 `decoder_2`。首帧两路均严格跳过时间残差。
@@ -75,7 +77,8 @@ for frame_index in range(3):
 编码不依赖 Decoder 缓存。接收端仅使用码流、共享模型和合法解码历史。
 每个新 Episode 必须发送 `frame_index=0`，该帧自动清空历史；后续帧必须严格有序。
 独立流使用独立 state；一个 batch 内需保持 Episode 和样本顺序一致。
-`state=None` 表示空缓存。history_size 是需同步的模型配置，不存入权重或帧载荷。
+`state=None` 表示空缓存。history_size 是需同步的模型配置，不存入帧载荷；
+v4 的帧龄表形状为 `[history_size+1,64]`，加载权重时必须使用相同 history_size。
 
 Gain 的 `alpha=0` 选当前档，`alpha=1` 选下一档；最后一档只允许 alpha=0。
 编码器和解码器使用相同指数插值，码流携带档位/系数。实际 BPP 为完整双路帧字节数
@@ -83,7 +86,7 @@ Gain 的 `alpha=0` 选当前档，`alpha=1` 选下一档；最后一档只允许
 
 ### 模型版本与旧 checkpoint / 码流
 
-当前组合版本为 **hypergain-v1 / decoder-v3**；`7b807fb` 是仅含 y-Gain 的旧版本。此前新增
+当前组合版本为 **hypergain-v1 / decoder-v4**；`7b807fb` 是仅含 y-Gain 的旧版本。此前新增
 `log_hyper_gain` 和 `log_inverse_hyper_gain`，各为 `[8,64]` 零初始化表，初始因子为 1。
 `LatentGain.factors()` 和无 Gain 的 Hyperprior 调用保持兼容，ECH1/ECG1/ECD1 字节结构不变。
 
@@ -92,7 +95,7 @@ Gain 的 `alpha=0` 选当前档，`alpha=1` 选下一档；最后一档只允许
 ```python
 from compress.gain import with_identity_hypergains
 old_state = torch.load("old_checkpoint.pt", map_location="cpu", weights_only=True)
-# 对完整旧 Codec 只迁移分析端：旧 decoder-v1 不能严格加载到 decoder-v2/v3。
+# 对完整旧 Codec 只迁移分析端：旧 decoder-v1 不能严格加载到 decoder-v2/v3/v4。
 analysis = {k[len("analysis."):]: v for k, v in old_state.items() if k.startswith("analysis.")}
 model.analysis.load_state_dict(with_identity_hypergains(analysis), strict=True)
 ```
@@ -101,7 +104,7 @@ model.analysis.load_state_dict(with_identity_hypergains(analysis), strict=True)
 支持 LatentGain、GainedEncoderHyperprior、DualViewCodec 的键前缀；其余缺键/形状仍由严格加载检查。
 同结构新 checkpoint 可正常严格加载；旧代码不能直接读取新增参数，恢复优化时也应重建 optimizer。
 
-`7db7e58` 的旧 Decoder 结构、权重与缓存不能等价迁移到 decoder-v2/v3；须重新初始化/训练
+`7db7e58` 的旧 Decoder 结构、权重与缓存不能等价迁移到 decoder-v2/v3/v4；须重新初始化/训练
 新 Decoder 并 reset 历史。分析端可按上例严格加载（已有 HyperGain 表不会被覆盖）。
 固定相同分析权重/CDF/帧头时，新旧 Decoder 的 compress 字节完全一致，但重建图像不等价。
 新模型部署时仍须让发送/接收端共享同一 Decoder 版本与权重。
@@ -111,8 +114,59 @@ model.analysis.load_state_dict(with_identity_hypergains(analysis), strict=True)
 现有包头不携带模型版本/hash，无法自动检测这种错配，必须由调用方同步模型身份。
 不需要另传 64 通道增益表或独立 z 档位。详细对照与验收数据见 `reports/hypergain_comparison.md`。
 Decoder 逐层结构、官方数值 oracle、必要差异、参数/MAC/时延见 `reports/ldmic_decoder_alignment.md`。
-该报告描述历史 decoder-v2；本次 v2→v3 对比见
+该报告描述历史 decoder-v2；历史 v2→v3 对比见
 [`reports/dual_temporal_comparison.md`](reports/dual_temporal_comparison.md)。
+
+### decoder-v3 → decoder-v4：Concat 融合与帧龄编码
+
+基线为 `8d0455e`，保留在 `tests/fixtures/decoder_v3.py`。
+空间主干、两路时序 Attention、投影层、查询特征与码流均不变，历史参考从
+`content(latent) + history_image(pool(rgb))` 改为：
+
+```python
+latent_feature = self.content(latent)                    # B,64,H,W
+rgb_feature = self.history_image(pool(rgb, latent_hw))   # B,64,H,W
+feature = self.history_fuse(torch.cat((latent_feature, rgb_feature), dim=1))
+reference = feature + self.temporal_age_embedding(age).reshape(1, 64, 1, 1)
+```
+
+`history_fuse` 是无激活的 `Conv2d(128,64,1)`，权重初始化为 `[I I]`，bias=0。
+`temporal_age_embedding` 为 `Embedding(history_size+1,64,padding_idx=0)`，全部零初始化，
+row 0 不使用；默认 row 1/2 分别代表 t−1/t−2。保留缓存的旧→新顺序，
+统一的 `_history_references` 用 `age=len(history)-index` 赋龄；仅一帧时总是 age=1。
+每路分别按自身历史 latent H/W 池化 RGB，首帧跳过所有时序参考构建。
+融合与帧龄表共享，两路 Attention 仍独立，时间残差仍位于 atten_4 后、decoder_2 前。
+
+新增 **8,448 参数**：融合卷积 8,256、默认帧龄表 192。
+默认 8 个 Gain 档位时总参数为 1,574,609，Decoder 为 1,072,387。
+双路 256×256、两帧历史时额外 8,388,608 MACs；缓存不增加特征，仍只保存四个张量。
+完整的实测延迟、缓存字节数及数值误差见
+[`reports/history_fusion_comparison.md`](reports/history_fusion_comparison.md)。
+
+旧 v3 checkpoint 直接 strict 加载会明确报告三个新增键缺失。
+显式迁移只补求和等价卷积和零帧龄表，不覆盖已有权重，不接受部分缺失的新模块：
+
+```python
+from compress.decoder import with_temporal_reference_init
+
+checkpoint = torch.load("decoder_v3.pt", map_location="cpu", weights_only=True)
+old_state = checkpoint["model"] if "model" in checkpoint else checkpoint
+model = DualViewCodec(levels=old_state["analysis.gain.log_gain"].shape[0], history_size=2)
+migrated = with_temporal_reference_init(old_state, history_size=model.decoder.history_size)
+model.load_state_dict(migrated, strict=True)
+```
+
+该函数也接受独立 Decoder 的 state_dict；必须传入模型实际 history_size。
+其他缺键、多键和形状错误仍由 strict 加载拒绝；新 v4 checkpoint 不会被重新初始化。
+训练时应重建主/辅助 optimizer，将新增参数纳入主 optimizer。
+`DecodedFrame`、`DecoderState` 的公共字段与 v3 完全相同，缓存仍 detach().clone()；
+切换部署模型时建议丢弃运行时历史，从 frame_index=0 重建，避免混用不同权重的重建历史。
+零帧龄和求和初始化的随机权重多帧对照误差见报告；这不表示帧龄编码训练后的质量收益。
+
+```sh
+OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 CUDA_VISIBLE_DEVICES='' \
+  python tools/benchmark_history_fusion.py --output outputs/history_fusion_v4_comparison
+```
 
 ### decoder-v2 → decoder-v3：历史与权重迁移
 
@@ -142,7 +196,9 @@ for source, target in (
     for key, value in old_state.items():
         if key.startswith(source):
             migrated[target + key[len(source):]] = value.clone()
-model.load_state_dict(migrated, strict=True)  # 其他缺键/多键/形状错误仍必须报错
+# 在当前 v4 上还需要显式补齐模态融合和零帧龄编码；历史 v3 可直接加载 migrated。
+from compress.decoder import with_temporal_reference_init
+model.load_state_dict(with_temporal_reference_init(migrated), strict=True)
 state = None  # 下一帧必须从 frame_index=0 开始
 ```
 
@@ -163,7 +219,7 @@ OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 CUDA_VISIBLE_DEVICES=
 小规模 CPU 结构/时延对照（不训练，默认各测项 1 次预热、3 次测量）：
 `OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 python tools/benchmark_decoder_alignment.py`。
 该脚本固定比较 `tests/fixtures/decoder_v1.py` 和 `decoder_v2.py` 的历史基线；
-生产入口始终使用 v3，v2→v3 对比使用上面的新脚本。
+生产入口始终使用 v4；v2→v3 与 v3→v4 分别使用对应的固定基线对比脚本。
 `EfficientCrossAttention` 导入及旧投影属性别名仍可用；参数存储名改为官方风格，不能据此复用旧权重。
 
 ### 后续训练接口

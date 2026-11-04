@@ -6,7 +6,7 @@ from unittest import mock
 import torch
 from torch.nn import functional as F
 
-from compress.decoder import SpatioTemporalDecoder
+from compress.decoder import SpatioTemporalDecoder, with_temporal_reference_init
 from compress.dual_view_codec import DualViewCodec
 from compress.lightweight_encoder import ImageGeometry
 from fixtures.decoder_v2 import SpatioTemporalDecoder as DecoderV2
@@ -22,7 +22,7 @@ def migrate_v2(state):
         for name, value in state.items():
             if name.startswith(source):
                 migrated[target + name[len(source):]] = value.clone()
-    return migrated
+    return with_temporal_reference_init(migrated)
 
 
 class DualTemporalRegression(unittest.TestCase):

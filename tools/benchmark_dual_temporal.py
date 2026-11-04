@@ -21,7 +21,8 @@ from compress.decoder import EfficientAttention
 from compress.dual_view_codec import DualViewCodec
 from fixtures.decoder_v2 import SpatioTemporalDecoder as DecoderV2
 from fixtures.decoder_v2 import EfficientAttention as AttentionV2
-from test_dual_temporal import migrate_v2
+from fixtures.decoder_v3 import SpatioTemporalDecoder as DecoderV3
+from fixtures.decoder_v3 import EfficientAttention as AttentionV3
 
 
 def parameters(model):
@@ -54,7 +55,7 @@ def macs(decoder, fn):
             counts['attention_matmul'] += x.shape[0]*module.head_count*(module.key_channels//module.head_count)*(module.value_channels//module.head_count)*(nq+nr)
 
     for m in decoder.modules():
-        if isinstance(m,(nn.Conv2d,nn.ConvTranspose2d,GDN,EfficientAttention,AttentionV2)):
+        if isinstance(m,(nn.Conv2d,nn.ConvTranspose2d,GDN,EfficientAttention,AttentionV2,AttentionV3)):
             handles.append(m.register_forward_hook(count))
     try:
         fn()
@@ -128,7 +129,13 @@ def main():
     torch.manual_seed(20261104)
     old,new = DualViewCodec().cpu().eval(),DualViewCodec().cpu().eval()
     old.decoder = DecoderV2().cpu().eval()
-    new.decoder.load_state_dict(migrate_v2(old.decoder.state_dict()),strict=True)
+    new.decoder = DecoderV3().cpu().eval()  # Keep this historical v2/v3 comparison fixed.
+    migrated = old.decoder.state_dict().copy()
+    for source, target in (('temporal.','temporal_wrist.'),('temporal_project.','temporal_project_wrist.')):
+        for name,value in old.decoder.state_dict().items():
+            if name.startswith(source):
+                migrated[target+name[len(source):]] = value.clone()
+    new.decoder.load_state_dict(migrated,strict=True)
     new.update(force=True)
     old.analysis.load_state_dict(new.analysis.state_dict(),strict=True)
     report = dict(torch=torch.__version__,device='cpu',threads=2,seed=20261104,

@@ -1,4 +1,4 @@
-"""decoder-v3: LDMIC spatial decoder with independent per-view temporal attention.
+"""decoder-v4: dual-view temporal attention with modality fusion and frame ages.
 
 JCT structure, EfficientAttention math and decoder_1/decoder_2 are adapted from
 Xinjie-Q/LDMIC, commit 4cf7318505a001c13d9946581f77e2b4af224246,
@@ -27,6 +27,7 @@ project extensions, not part of LDMIC. This is not a full paper reproduction.
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import copy
 from dataclasses import dataclass
 
 import torch
@@ -36,6 +37,35 @@ from compressai.layers import GDN, ResidualBlock
 from compressai.models.utils import deconv
 
 from .lightweight_encoder import ImageGeometry, ycocg_to_rgb
+
+
+def with_temporal_reference_init(state_dict, history_size: int = 2):
+    """Explicit v3->v4 state_dict migration (full codec or standalone decoder).
+
+    Add only sum-equivalent fusion and zero age embeddings. Do not overwrite
+    learned v4 weights or hide partially missing new parameters. Callers must
+    still load strictly and use the model's history_size and Gain level count.
+    """
+    if isinstance(history_size, bool) or not isinstance(history_size, int) or history_size < 1:
+        raise ValueError("history_size must be a positive integer")
+    prefix = "decoder." if any(k.startswith("decoder.") for k in state_dict) else ""
+    names = tuple(prefix + k for k in ("history_fuse.weight", "history_fuse.bias",
+                                       "temporal_age_embedding.weight"))
+    present = [name in state_dict for name in names]
+    if any(present) and not all(present):
+        raise ValueError("Incomplete fusion/age weights; explicit repair is required")
+    migrated = copy.copy(state_dict)
+    if all(present):
+        return migrated
+    reference = state_dict[prefix + "temporal.queries.weight"]
+    weight = reference.new_zeros(64, 128, 1, 1)
+    identity = torch.eye(64, device=reference.device, dtype=reference.dtype)
+    weight[:, :64, 0, 0] = identity
+    weight[:, 64:, 0, 0] = identity
+    migrated[names[0]] = weight
+    migrated[names[1]] = reference.new_zeros(64)
+    migrated[names[2]] = reference.new_zeros(history_size + 1, 64)
+    return migrated
 
 
 @dataclass(frozen=True)
@@ -153,6 +183,32 @@ class SpatioTemporalDecoder(nn.Module):
         self.temporal_project = nn.Conv2d(64, 64, 1)
         self.temporal_wrist = EfficientCrossAttention()
         self.temporal_project_wrist = nn.Conv2d(64, 64, 1)
+        self.history_fuse = nn.Conv2d(128, 64, 1)
+        self.temporal_age_embedding = nn.Embedding(history_size + 1, 64, padding_idx=0)
+        with torch.no_grad():
+            self.history_fuse.weight.zero_()
+            identity = torch.eye(64)
+            self.history_fuse.weight[:, :64, 0, 0].copy_(identity)
+            self.history_fuse.weight[:, 64:, 0, 0].copy_(identity)
+            self.history_fuse.bias.zero_()
+            self.temporal_age_embedding.weight.zero_()
+
+    def _history_references(self, history: tuple[DecodedFrame, ...], view: str) -> tuple[Tensor, ...]:
+        """Chronological references with newest age=1, independent of view H/W."""
+        if view not in ("main", "wrist"):
+            raise ValueError("History view must be main or wrist")
+        references = []
+        # Keep token order unchanged for numerical continuity with v3. Cache is
+        # oldest->newest, so age counts down rather than treating index 0 as t-1.
+        for index, entry in enumerate(history):
+            latent, rgb = getattr(entry, view + "_latent"), getattr(entry, view + "_rgb")
+            latent_feature = self.content(latent)
+            rgb_feature = self.history_image(F.adaptive_avg_pool2d(rgb, latent.shape[-2:]))
+            feature = self.history_fuse(torch.cat((latent_feature, rgb_feature), dim=1))
+            age = torch.tensor(len(history) - index, device=latent.device, dtype=torch.long)
+            age_embedding = self.temporal_age_embedding(age).reshape(1, 64, 1, 1)
+            references.append(feature + age_embedding)
+        return tuple(references)
 
     def _reconstruct(self, feature: Tensor, geometry: ImageGeometry) -> Tensor:
         feature = self.decoder_2(feature)
@@ -192,13 +248,11 @@ class SpatioTemporalDecoder(nn.Module):
         main_feature, wrist_feature = self.atten_4(self.decoder_1(main_feature),
                                                  self.decoder_1(wrist_feature))
         if history:
-            references = tuple(self.content(entry.main_latent) + self.history_image(
-                F.adaptive_avg_pool2d(entry.main_rgb, entry.main_latent.shape[-2:])) for entry in history)
+            references = self._history_references(history, "main")
             temporal = self.temporal(self.content(main), references)
             main_feature = main_feature + self.temporal_project(
                 F.interpolate(temporal, size=main_feature.shape[-2:], mode="nearest"))
-            references_wrist = tuple(self.content(entry.wrist_latent) + self.history_image(
-                F.adaptive_avg_pool2d(entry.wrist_rgb, entry.wrist_latent.shape[-2:])) for entry in history)
+            references_wrist = self._history_references(history, "wrist")
             temporal_wrist = self.temporal_wrist(self.content(wrist), references_wrist)
             wrist_feature = wrist_feature + self.temporal_project_wrist(
                 F.interpolate(temporal_wrist, size=wrist_feature.shape[-2:], mode="nearest"))
