@@ -1,0 +1,33 @@
+{
+  "snapshot_hashes_unchanged": true,
+  "source_hashes": {
+    "source_snapshot/compress/lightweight_encoder.py": "c28b913dfdd9c48f6e8d25772e76f679db59c028627d92835036c92ffbfe3b1c",
+    "source_snapshot/compress/hyperprior.py": "239ceb206569143dcc6f0b99c5be787ef5c51e73d179aac1abc8bd9ae55de287",
+    "source_snapshot/compress/gain.py": "dfe898326d7195af3c319c4a979aa59622f1c3f0b2a5f0488066383ed5c5ae64",
+    "source_snapshot/compress/decoder.py": "03aa7ec500e4ce4a4f64b3bdaffe5039d46d4802c674ea7fd75a17debdf47f66",
+    "source_snapshot/compress/dual_view_codec.py": "da00fc2f726e73b6c53fb7375670be5b9bb2fac4400021eab000e52048b4039e",
+    "source_snapshot/compress/__init__.py": "e76e14662be294ec628187e61bcf60e278794e911715091ad0390fbff722006e"
+  },
+  "protected_files_unchanged": {
+    "compress/lightweight_encoder.py": "c28b913dfdd9c48f6e8d25772e76f679db59c028627d92835036c92ffbfe3b1c",
+    "compress/gain.py": "dfe898326d7195af3c319c4a979aa59622f1c3f0b2a5f0488066383ed5c5ae64",
+    "compress/hyperprior.py": "239ceb206569143dcc6f0b99c5be787ef5c51e73d179aac1abc8bd9ae55de287",
+    "compress/decoder.py": "03aa7ec500e4ce4a4f64b3bdaffe5039d46d4802c674ea7fd75a17debdf47f66"
+  },
+  "codec_math_methods_unchanged": [
+    "forward",
+    "compress",
+    "decompress",
+    "_reconstruct",
+    "_check_sequence"
+  ],
+  "training_last_step": 51195,
+  "training_start_observed_step": 2600,
+  "runner": {
+    "stage": "train",
+    "pid": 3376957,
+    "updated": 1793786157.8411393
+  },
+  "no_v5_gpu_access": true,
+  "no_formal_v5_training": true
+}

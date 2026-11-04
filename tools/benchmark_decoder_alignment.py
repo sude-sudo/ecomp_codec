@@ -67,9 +67,9 @@ def main():
     output.mkdir(parents=True,exist_ok=False)
     torch.set_num_threads(2)
     torch.manual_seed(20261103)
-    new = DualViewCodec().eval()
+    new = DualViewCodec(decoder_config='baseline').eval()
     new.decoder = AlignedDecoder().eval()  # Fixed v2 baseline; current production decoder is v3.
-    old = DualViewCodec().eval()
+    old = DualViewCodec(decoder_config='baseline').eval()
     old.decoder = LegacyDecoder().eval()
     new.update(force=True)
     old.analysis.load_state_dict(new.analysis.state_dict(),strict=True)

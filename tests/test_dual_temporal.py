@@ -133,7 +133,7 @@ class DualTemporalRegression(unittest.TestCase):
 
     @torch.no_grad()
     def test_analysis_and_frame_bytes_unchanged_from_v2(self):
-        new, old = DualViewCodec().eval(), DualViewCodec().eval()
+        new, old = DualViewCodec(decoder_config='baseline').eval(), DualViewCodec(decoder_config='baseline').eval()
         old.decoder = DecoderV2().eval()
         new.update(force=True)
         old.analysis.load_state_dict(new.analysis.state_dict(),strict=True)

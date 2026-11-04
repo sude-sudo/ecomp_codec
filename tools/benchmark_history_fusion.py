@@ -39,7 +39,7 @@ def main():
     args.output.mkdir(parents=True,exist_ok=False)
     torch.set_num_threads(2)
     torch.manual_seed(20261104)
-    old,new = DualViewCodec().cpu().eval(),DualViewCodec().cpu().eval()
+    old,new = DualViewCodec(decoder_config='baseline').cpu().eval(),DualViewCodec(decoder_config='baseline').cpu().eval()
     old.decoder = DecoderV3().cpu().eval()
     new.decoder.load_state_dict(with_temporal_reference_init(old.decoder.state_dict()),strict=True)
     new.update(force=True)

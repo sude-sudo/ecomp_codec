@@ -1,0 +1,199 @@
+{
+  "device": "cpu",
+  "threads": 2,
+  "torch": "2.5.1+cu121",
+  "platform": "Linux-5.15.0-100-generic-x86_64-with-glibc2.31",
+  "input": "B=1; two 256x256 views; full configured history; random latents; independent cloned cached entries",
+  "latency": "one warmup then uninstrumented median; CPU host load varies; includes both views and cache copy",
+  "memory": "peak CPU subprocess RSS including interpreter/model/cache/temporaries; not GPU memory; GPU unmeasured to avoid active training",
+  "macs": "nominal conv/deconv/GDN gamma/linear, factorized attention and SDPA QK+AV; excludes softmax, norm, elementwise activations, pooling/interpolation and coding",
+  "cases": [
+    {
+      "config": "baseline",
+      "history": 2,
+      "parameters": {
+        "codec": 1574609,
+        "encoder": 12558,
+        "analysis": 502222,
+        "decoder": 1072387,
+        "jct_low": 343712,
+        "jct_high": 343712,
+        "temporal": 60288
+      },
+      "cache_bytes": 3407872,
+      "median_ms": 379.62746201083064,
+      "samples_ms": [
+        379.62746201083064,
+        404.85635097138584,
+        215.09837097255513
+      ],
+      "nominal_macs": {
+        "convolution": 3086942208,
+        "transposed_convolution": 1258291200,
+        "gdn": 176160768,
+        "linear": 0,
+        "factorized_attention": 1212416,
+        "sdpa": 0,
+        "total": 4522606592
+      },
+      "peak_cpu_process_rss_bytes": 730497024,
+      "gpu_peak_memory_bytes": null
+    },
+    {
+      "config": "wide-ldmic",
+      "history": 2,
+      "parameters": {
+        "codec": 6983217,
+        "encoder": 12558,
+        "analysis": 502222,
+        "decoder": 6480995,
+        "jct_low": 3089376,
+        "jct_high": 1373504,
+        "temporal": 512512
+      },
+      "cache_bytes": 12582912,
+      "median_ms": 1339.2934600124136,
+      "samples_ms": [
+        1552.8019579942338,
+        1339.2934600124136,
+        1317.170805996284
+      ],
+      "nominal_macs": {
+        "convolution": 13648592896,
+        "transposed_convolution": 4823449600,
+        "gdn": 704643072,
+        "linear": 0,
+        "factorized_attention": 2834432,
+        "sdpa": 0,
+        "total": 19179520000
+      },
+      "peak_cpu_process_rss_bytes": 786919424,
+      "gpu_peak_memory_bytes": null
+    },
+    {
+      "config": "wide-elic",
+      "history": 2,
+      "parameters": {
+        "codec": 17104209,
+        "encoder": 12558,
+        "analysis": 502222,
+        "decoder": 16601987,
+        "jct_low": 8579360,
+        "jct_high": 3089376,
+        "temporal": 1407104
+      },
+      "cache_bytes": 17301504,
+      "median_ms": 2307.2519570123404,
+      "samples_ms": [
+        2307.2519570123404,
+        1994.4007730227895,
+        2680.952155031264
+      ],
+      "nominal_macs": {
+        "convolution": 31902597120,
+        "transposed_convolution": 10695475200,
+        "gdn": 1585446912,
+        "linear": 0,
+        "factorized_attention": 6766592,
+        "sdpa": 0,
+        "total": 44190285824
+      },
+      "peak_cpu_process_rss_bytes": 878489600,
+      "gpu_peak_memory_bytes": null
+    },
+    {
+      "config": "long-history",
+      "history": 8,
+      "parameters": {
+        "codec": 17106129,
+        "encoder": 12558,
+        "analysis": 502222,
+        "decoder": 16603907,
+        "jct_low": 8579360,
+        "jct_high": 3089376,
+        "temporal": 1409024
+      },
+      "cache_bytes": 69206016,
+      "median_ms": 1294.956513971556,
+      "samples_ms": [
+        559.7916929982603,
+        1294.956513971556,
+        2096.617602976039
+      ],
+      "nominal_macs": {
+        "convolution": 35546726400,
+        "transposed_convolution": 10695475200,
+        "gdn": 1585446912,
+        "linear": 0,
+        "factorized_attention": 9224192,
+        "sdpa": 0,
+        "total": 47836872704
+      },
+      "peak_cpu_process_rss_bytes": 909631488,
+      "gpu_peak_memory_bytes": null
+    },
+    {
+      "config": "vts8",
+      "history": 8,
+      "parameters": {
+        "codec": 16718401,
+        "encoder": 12558,
+        "analysis": 502222,
+        "decoder": 16216179,
+        "jct_low": 8579360,
+        "jct_high": 3089376,
+        "temporal": 1021296
+      },
+      "cache_bytes": 69206016,
+      "median_ms": 8258.188669045921,
+      "samples_ms": [
+        8320.652358001098,
+        8258.188669045921,
+        6386.753919010516
+      ],
+      "nominal_macs": {
+        "convolution": 38374998016,
+        "transposed_convolution": 10695475200,
+        "gdn": 1585446912,
+        "linear": 9940500480,
+        "factorized_attention": 5537792,
+        "sdpa": 3758096384,
+        "total": 64360054784
+      },
+      "peak_cpu_process_rss_bytes": 1063456768,
+      "gpu_peak_memory_bytes": null
+    },
+    {
+      "config": "vts16",
+      "history": 16,
+      "parameters": {
+        "codec": 16722625,
+        "encoder": 12558,
+        "analysis": 502222,
+        "decoder": 16220403,
+        "jct_low": 8579360,
+        "jct_high": 3089376,
+        "temporal": 1025520
+      },
+      "cache_bytes": 138412032,
+      "median_ms": 15552.434447978158,
+      "samples_ms": [
+        10103.262399963569,
+        15870.672288991045,
+        15552.434447978158
+      ],
+      "nominal_macs": {
+        "convolution": 47056945152,
+        "transposed_convolution": 10695475200,
+        "gdn": 1585446912,
+        "linear": 19172163584,
+        "factorized_attention": 5537792,
+        "sdpa": 7516192768,
+        "total": 86031761408
+      },
+      "peak_cpu_process_rss_bytes": 1254809600,
+      "gpu_peak_memory_bytes": null
+    }
+  ],
+  "note": "VTS cases remeasured after removing softmax-invariant constant biases. Host-load variation is large; do not infer long-history is faster from these medians."
+}

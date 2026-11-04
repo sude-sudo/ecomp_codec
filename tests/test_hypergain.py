@@ -164,7 +164,7 @@ class HyperGainAcceptance(unittest.TestCase):
                   f"Rz_ratio={rz/(ry+rz):.6f} actual_bpp={actual['actual_bpp']:.6f}")
 
     def test_full_codec_backward_all_modules_and_update(self):
-        model = DualViewCodec()
+        model = DualViewCodec(decoder_config='baseline')
         perturb(model.analysis.gain)
         main, wrist = torch.rand(1, 3, 65, 71), torch.rand(1, 3, 31, 49)
         first = model(main, wrist, main_rate=(3, .5), wrist_rate=(6, .2))
@@ -187,10 +187,10 @@ class HyperGainAcceptance(unittest.TestCase):
             self.assertFalse(torch.equal(p, before[name]), name)
 
     def test_dual_view_multiframe_independent_rates_and_reset(self):
-        sender = DualViewCodec().eval()
+        sender = DualViewCodec(decoder_config='baseline').eval()
         perturb(sender.analysis.gain)
         sender.update(force=True)
-        receiver = DualViewCodec().eval()
+        receiver = DualViewCodec(decoder_config='baseline').eval()
         receiver.load_state_dict(sender.state_dict())
         del receiver.analysis.g_a
         del receiver.analysis.hyperprior.h_a
@@ -223,7 +223,7 @@ class HyperGainAcceptance(unittest.TestCase):
             self.assertEqual(temporal_wrist.call_count, 3)
 
     def test_legacy_checkpoint_explicit_migration_and_old_stream(self):
-        for model in (LatentGain(), GainedEncoderHyperprior().eval(), DualViewCodec().eval()):
+        for model in (LatentGain(), GainedEncoderHyperprior().eval(), DualViewCodec(decoder_config='baseline').eval()):
             full = model.state_dict()
             legacy = copy.copy(full)
             for name in tuple(legacy):

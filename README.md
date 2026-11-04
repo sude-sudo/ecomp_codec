@@ -2,8 +2,10 @@
 
 用于源码审查的双相机时空可变码率 Codec。代码从 EmbodiedComp 的 `codec`
 分支 `850a336` 独立导出，不包含原项目历史、VLA、数据、权重或实验输出。
-旧简化 Decoder 曾做功能与小规模过拟合验证；本次 decoder-v4 历史模态融合与帧龄编码
-只做 CPU 正确性和短时延验证，新增能力尚未经正式训练或质量评估。
+当前默认是 **decoder-v5 / VTS-8：M=320、N=192、8 帧双视角历史**。
+旧 decoder-v4 完整保留为 `decoder_config='baseline'`，可严格加载历史 V4 权重。
+V5 已完成 CPU 功能、梯度和开销验证，并已启动 LIBERO 十轮训练；尚无最终评估结果，不声称 PSNR/BPP 提升。
+完整结构、六组消融配置、迁移与实测见 [Decoder-v5 报告](reports/decoder_v5_architecture.md)。
 
 ## 目录与数据流
 
@@ -13,8 +15,9 @@ compress/
   hyperprior.py           64 通道 Ballé Scale Hyperprior 与真实熵编码
   gain.py                 y/z 各自可学习 Gain/Inverse Gain、8 档与连续指数插值
   decoder.py              双尺度 LDMIC JCT、双路独立时间残差、Concat 融合与帧龄编码
+  decoder_v5.py           可配置宽 Decoder、双尺度 View×Time×Space Attention、显式迁移
   dual_view_codec.py      完整双视角前向、帧码流封装与解码入口
- tests/                   53 项 Codec CPU 单元/集成测试及固定官方 oracle/旧基线
+ tests/                   Codec CPU 单元/集成测试及固定官方 oracle/旧基线
  tools/smoke_dual_view_codec.py  外部 RGB 图片的冒烟/小规模过拟合脚本
 ```
 
@@ -25,7 +28,8 @@ Hyperprior 编码 y/z → bytes → 熵解码 → Inverse Gain → 自建 Decode
 256×256 输入的 latent 为 `B×64×16×16`。EntropyBottleneck、GaussianConditional
 及 CDF 更新直接使用 CompressAI，未修改其底层算法；不构建或调用 Ballé `g_s`。
 
-Decoder 空间主干按 LDMIC 固定提交 `4cf7318` 适配为 M=N=64：
+以下空间/时序结构说明描述显式 `baseline`，V5 默认结构见上述报告。
+Baseline Decoder 空间主干按 LDMIC 固定提交 `4cf7318` 适配为 M=N=64：
 `JCT@H/16 → Deconv+IGDN×2 → JCT@H/4 → Deconv+IGDN → Deconv(3)`。
 每个 JCT 保留 rb1/rb2、两头 EfficientAttention、两块 refine ResidualBlock 和外层残差，
 两视角共享权重；两级 JCT 参数独立。不等分辨率 Attention 保留各自 token 数，不 resize 视角。
@@ -78,7 +82,9 @@ for frame_index in range(3):
 每个新 Episode 必须发送 `frame_index=0`，该帧自动清空历史；后续帧必须严格有序。
 独立流使用独立 state；一个 batch 内需保持 Episode 和样本顺序一致。
 `state=None` 表示空缓存。history_size 是需同步的模型配置，不存入帧载荷；
-v4 的帧龄表形状为 `[history_size+1,64]`，加载权重时必须使用相同 history_size。
+V5 默认 history_size=8，也支持 16；每个尺度有独立帧龄/视角编码。
+V4 baseline 的帧龄表形状为 `[history_size+1,64]`。配置及 history_size 必须与权重匹配。
+V4 与 V5 的 DecoderState 不兼容，不能沿用历史；切换模型必须从 frame_index=0 重建。
 
 Gain 的 `alpha=0` 选当前档，`alpha=1` 选下一档；最后一档只允许 alpha=0。
 编码器和解码器使用相同指数插值，码流携带档位/系数。实际 BPP 为完整双路帧字节数
@@ -86,7 +92,8 @@ Gain 的 `alpha=0` 选当前档，`alpha=1` 选下一档；最后一档只允许
 
 ### 模型版本与旧 checkpoint / 码流
 
-当前组合版本为 **hypergain-v1 / decoder-v4**；`7b807fb` 是仅含 y-Gain 的旧版本。此前新增
+当前组合版本为 **hypergain-v1 / decoder-v5**，以下旧迁移示例针对显式 V4 baseline。
+`7b807fb` 是仅含 y-Gain 的旧版本。此前新增
 `log_hyper_gain` 和 `log_inverse_hyper_gain`，各为 `[8,64]` 零初始化表，初始因子为 1。
 `LatentGain.factors()` 和无 Gain 的 Hyperprior 调用保持兼容，ECH1/ECG1/ECD1 字节结构不变。
 
@@ -151,7 +158,7 @@ from compress.decoder import with_temporal_reference_init
 
 checkpoint = torch.load("decoder_v3.pt", map_location="cpu", weights_only=True)
 old_state = checkpoint["model"] if "model" in checkpoint else checkpoint
-model = DualViewCodec(levels=old_state["analysis.gain.log_gain"].shape[0], history_size=2)
+model = DualViewCodec(levels=old_state["analysis.gain.log_gain"].shape[0], history_size=2, decoder_config="baseline")
 migrated = with_temporal_reference_init(old_state, history_size=model.decoder.history_size)
 model.load_state_dict(migrated, strict=True)
 ```
@@ -185,7 +192,7 @@ v3 新增 `decoder.temporal_wrist.*` 和 `decoder.temporal_project_wrist.*`。
 ```python
 checkpoint = torch.load("decoder_v2.pt", map_location="cpu", weights_only=True)
 old_state = checkpoint["model"] if "model" in checkpoint else checkpoint
-model = DualViewCodec(levels=old_state["analysis.gain.log_gain"].shape[0])
+model = DualViewCodec(levels=old_state["analysis.gain.log_gain"].shape[0], decoder_config="baseline")
 migrated = old_state.copy()
 for source, target in (
     ("decoder.temporal.", "decoder.temporal_wrist."),
@@ -223,6 +230,25 @@ OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 CUDA_VISIBLE_DEVICES=
 `EfficientCrossAttention` 导入及旧投影属性别名仍可用；参数存储名改为官方风格，不能据此复用旧权重。
 
 ### 后续训练接口
+
+LIBERO HDF5 多 epoch 训练（默认新结构 `vts8`、10 个 epoch）：
+
+```sh
+python tools/train_libero.py --data /path/to/libero_spatial_hdf5 \
+  --output outputs/vts8_epochs10 --device cuda:0 --epochs 10
+tensorboard --logdir outputs/vts8_epochs10/tensorboard --port 6006
+```
+
+浏览器打开 `http://localhost:6006`，`train/*` 显示 step 曲线，
+`epoch/*` 显示每轮按帧平均的 Loss、BPP、双路 PSNR、辅助损失及梯度指标。
+每轮遍历所有轨迹，轨迹顺序随机、内部帧顺序不变，轨迹之间清空历史。
+输出还包括 `metrics.csv`、`epochs.csv` 和每轮结束更新的 `latest.pt`。
+`--steps` 可覆盖总步数用于短测；截断轮在 `epochs.csv` 中标记 `complete=False`。
+`--resume` 严格加载同结构、同档位权重与优化器，在新输出目录从新一轮开始，
+步数和曲线重新计数；默认六档 paper objective 不兼容旧八档 checkpoint。
+需要旧 V4 时显式指定 `--decoder-config baseline`。
+输入目录直接包含 HDF5 文件，每个 demo 的两路 RGB 均为 128×128；
+Parquet 数据须先转换成该格式。训练统计来自训练集，不是验证指标。
 
 `model.train()` 后调用与上述相同参数的 `model(main, wrist, state=..., ...)`，
 返回两路重建、`likelihoods`、`estimated_bpp` 与新的 state。可构造

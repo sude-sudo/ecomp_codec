@@ -94,7 +94,7 @@ def main():
                                "original_wh": image.size, "smoke_hw": hw})
         smoke.append(smoke_pair)
         overfit.append(train_pair)
-    model = DualViewCodec()
+    model = DualViewCodec(decoder_config='baseline')
     config = {"source_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip(),
               "seed": 20261103, "device": "cpu", "threads": args.threads,
               "steps": args.steps, "pairs": 3, "overfit_hw": [96, 96],
@@ -113,7 +113,7 @@ def main():
     def evaluate(stage):
         model.eval()
         model.update(force=True)  # Rebuild learned CDFs before actual coding.
-        receiver = DualViewCodec().eval()
+        receiver = DualViewCodec(decoder_config='baseline').eval()
         receiver.load_state_dict(model.state_dict())
         del receiver.analysis.g_a
         calls = {"spatial": 0, "temporal": 0, "temporal_wrist": 0}

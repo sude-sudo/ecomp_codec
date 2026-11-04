@@ -186,7 +186,7 @@ class LDMICAlignment(unittest.TestCase):
                     decoder(main,wrist,geometry,geometry,DecoderState(0,1,(entry,)),frame_index=1)
 
     def test_analysis_migration_and_bitstream_unchanged(self):
-        old = DualViewCodec().eval()
+        old = DualViewCodec(decoder_config='baseline').eval()
         old.decoder = LegacyDecoder().eval()
         with torch.no_grad():
             old.analysis.gain.log_hyper_gain.add_(torch.linspace(.1,.5,64))
@@ -195,7 +195,7 @@ class LDMICAlignment(unittest.TestCase):
         old_state = old.state_dict()
         with self.assertRaises(RuntimeError):
             SpatioTemporalDecoder().load_state_dict(old.decoder.state_dict(),strict=True)
-        new = DualViewCodec().eval()
+        new = DualViewCodec(decoder_config='baseline').eval()
         analysis_state = {k[len("analysis."):]:v for k,v in old_state.items() if k.startswith("analysis.")}
         new.analysis.load_state_dict(analysis_state,strict=True)
         main,wrist = torch.rand(1,3,95,113),torch.rand(1,3,65,81)

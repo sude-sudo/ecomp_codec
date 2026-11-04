@@ -116,7 +116,7 @@ class DualViewAcceptance(unittest.TestCase):
 
     def setUp(self):
         torch.manual_seed(20261103)
-        self.model = DualViewCodec()
+        self.model = DualViewCodec(decoder_config='baseline')
 
     def test_training_sequence_rd_backward_and_optimizer(self):
         state = None
@@ -157,7 +157,7 @@ class DualViewAcceptance(unittest.TestCase):
         checkpoint = io.BytesIO()
         torch.save(self.model.state_dict(), checkpoint)
         checkpoint.seek(0)
-        receiver = DualViewCodec().eval()
+        receiver = DualViewCodec(decoder_config='baseline').eval()
         receiver.load_state_dict(torch.load(checkpoint, weights_only=True))
         del receiver.analysis.g_a  # Receiver cannot encode or access source images.
         forward_state = decoded_state = None

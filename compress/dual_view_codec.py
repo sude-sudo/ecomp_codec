@@ -4,7 +4,9 @@ Use forward(main, wrist, state=previous_state, episode_id=..., frame_index=i)
 for RD training. For actual coding use compress(..., frame_index=i) followed by
 decompress(packet, state=previous_state). Only reconstructed history is cached.
 Frame 0 resets history. Nonzero frames require the exact preceding state.
-Weights/CDFs and history_size are shared model configuration, not frame payload.
+Weights/CDFs, decoder_config/options and history_size are shared configuration,
+not frame payload. Default is Decoder-v5 VTS-8; use decoder_config='baseline'
+explicitly for the exact historical Decoder-v4.
 """
 
 from numbers import Integral
@@ -14,7 +16,8 @@ import torch
 from torch import Tensor
 from compressai.models import CompressionModel
 
-from .decoder import DecoderState, SpatioTemporalDecoder
+from .decoder import DecoderState as LegacyDecoderState
+from .decoder_v5 import DecoderState, build_decoder
 from .gain import GainedEncoderHyperprior
 
 
@@ -23,10 +26,12 @@ _MAGIC = b"ECD1"
 
 
 class DualViewCodec(CompressionModel):
-    def __init__(self, levels: int = 8, history_size: int = 2):
+    def __init__(self, levels: int = 8, history_size: int | None = None,
+                 decoder_config: str = 'vts8', **decoder_options):
         super().__init__()
         self.analysis = GainedEncoderHyperprior(levels)
-        self.decoder = SpatioTemporalDecoder(history_size)
+        self.decoder_config = decoder_config
+        self.decoder = build_decoder(decoder_config, history_size, **decoder_options)
 
     @staticmethod
     def _check_sequence(episode_id, frame_index):
@@ -39,7 +44,7 @@ class DualViewCodec(CompressionModel):
                             state=state, episode_id=episode_id, frame_index=frame_index)
 
     def forward(self, main_rgb: Tensor, wrist_rgb: Tensor,
-                state: DecoderState | None = None, episode_id: int = 0, frame_index: int = 0,
+                state: DecoderState | LegacyDecoderState | None = None, episode_id: int = 0, frame_index: int = 0,
                 main_rate: tuple[int, float] = (0, 0.), wrist_rate: tuple[int, float] = (0, 0.)):
         self._check_sequence(episode_id, frame_index)
         main = self.analysis(main_rgb, *main_rate)
@@ -66,7 +71,7 @@ class DualViewCodec(CompressionModel):
         return _FRAME.pack(_MAGIC, episode_id, frame_index, len(main), len(wrist)) + main + wrist
 
     @torch.no_grad()
-    def decompress(self, packet: bytes, state: DecoderState | None = None):
+    def decompress(self, packet: bytes, state: DecoderState | LegacyDecoderState | None = None):
         if not isinstance(packet, bytes) or len(packet) < _FRAME.size:
             raise ValueError("Expected a complete ECD1 frame packet")
         magic, episode_id, frame_index, nm, nw = _FRAME.unpack_from(packet)

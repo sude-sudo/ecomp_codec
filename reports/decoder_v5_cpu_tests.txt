@@ -1,0 +1,125 @@
+test_default_widths_256_and_unequal_view_with_history (test_decoder_v5.DecoderV5Tests) ... ok
+test_effective_gradients_for_both_scales_expansion_and_all_fusion_sources (test_decoder_v5.DecoderV5Tests) ... ok
+test_either_history_view_latent_rgb_and_cached_features_affect_current_views (test_decoder_v5.DecoderV5Tests) ... ok
+test_explicit_migration_and_packet_bytes_independent_receiver (test_decoder_v5.DecoderV5Tests) ... ok
+test_high_scale_partial_windows_unequal_memory_backward (test_decoder_v5.DecoderV5Tests) ... ok
+test_history_8_16_order_reset_age_and_detached_cache (test_decoder_v5.DecoderV5Tests) ... ok
+test_invalid_configuration_rejected (test_decoder_v5.DecoderV5Tests) ... ok
+test_no_future_or_legacy_history_accepted (test_decoder_v5.DecoderV5Tests) ... ok
+test_six_presets_and_exact_legacy_strict_loading (test_decoder_v5.DecoderV5Tests) ... ok
+test_time_view_and_spatial_identity_are_effective (test_decoder_v5.DecoderV5Tests) ... ok
+test_token_sdpa_matches_dense_query_specific_attention (test_decoder_v5.DecoderV5Tests) ... ok
+test_wide_efficient_temporal_long_history (test_decoder_v5.DecoderV5Tests) ... ok
+test_analysis_and_frame_bytes_unchanged_from_v2 (test_dual_temporal.DualTemporalRegression) ... ok
+test_both_cached_frames_matter_and_history_size_limit (test_dual_temporal.DualTemporalRegression) ... ok
+test_reference_features_and_injection_order_use_each_views_geometry (test_dual_temporal.DualTemporalRegression) ... ok
+test_v2_migration_main_bitexact_and_first_frame_both_bitexact (test_dual_temporal.DualTemporalRegression) ... ok
+test_attention_matches_explicit_factorization (test_dual_view_codec.DecoderAcceptance) ... ok
+test_context_changes_outputs_and_no_cyclic_dependency (test_dual_view_codec.DecoderAcceptance) ... ok
+test_decoder_gradients_detached_history_and_copy (test_dual_view_codec.DecoderAcceptance) ... ok
+test_each_temporal_gradient_depends_only_on_its_view_loss (test_dual_view_codec.DecoderAcceptance) ... ok
+test_episode_reset_and_order_errors (test_dual_view_codec.DualViewAcceptance) ... ok
+test_invalid_inputs_and_no_balle_decoder (test_dual_view_codec.DualViewAcceptance) ... ok
+test_multiframe_real_bytes_match_forward_cache_and_bpp (test_dual_view_codec.DualViewAcceptance) ... ok
+test_training_sequence_rd_backward_and_optimizer (test_dual_view_codec.DualViewAcceptance) ... ok
+test_all_rates_training_gradients_and_parameter_updates (test_gain.GainAcceptance) ... ok
+test_geometric_interpolation_and_endpoints (test_gain.GainAcceptance) ... ok
+test_identity_rate_and_probability_input (test_gain.GainAcceptance) ... ok
+test_invalid_rate_and_packet_rejected (test_gain.GainAcceptance) ... ok
+test_nonzero_latent_roundtrip_at_every_rate (test_gain.GainAcceptance) ... ok
+test_packet_rate_recovery_fresh_receiver_and_bpp (test_gain.GainAcceptance) ... ok
+test_age_and_fusion_gradients_for_both_view_losses (test_history_fusion_age.HistoryFusionAge) ... ok
+test_age_rows_oldest_to_newest_for_both_views_and_any_history_size (test_history_fusion_age.HistoryFusionAge) ... ok
+test_concat_shapes_sum_initialization_modal_effect_and_gradients (test_history_fusion_age.HistoryFusionAge) ... ok
+test_content_age_pairing_changes_attention_but_token_order_does_not (test_history_fusion_age.HistoryFusionAge) ... ok
+test_explicit_migration_full_and_decoder_partial_keys_and_metadata (test_history_fusion_age.HistoryFusionAge) ... ok
+test_first_frame_skips_fusion_embedding_and_both_attentions (test_history_fusion_age.HistoryFusionAge) ... ok
+test_nonzero_age_fusion_real_stream_receiver_reset_and_unchanged_bytes (test_history_fusion_age.HistoryFusionAge) ... ok
+test_v3_migrated_random_sequence_numerical_equivalence (test_history_fusion_age.HistoryFusionAge) ... ok
+test_dual_view_multiframe_independent_rates_and_reset (test_hypergain.HyperGainAcceptance) ... ok
+test_forward_gain_placement_and_rate_gradients (test_hypergain.HyperGainAcceptance) ... ok
+test_full_codec_backward_all_modules_and_update (test_hypergain.HyperGainAcceptance) ... ok
+test_initialization_and_interpolation (test_hypergain.HyperGainAcceptance) ... ok
+test_legacy_checkpoint_explicit_migration_and_old_stream (test_hypergain.HyperGainAcceptance) ... ok
+test_optional_gain_contract_and_no_gain_compatibility (test_hypergain.HyperGainAcceptance) ... ok
+test_real_coding_uses_decoded_z_and_identical_indexes (test_hypergain.HyperGainAcceptance) ... ok
+test_single_view_fresh_receiver_payload_accounting (test_hypergain.HyperGainAcceptance) ... ok
+test_coding_preconditions_and_packet_geometry (test_hyperprior.HyperpriorAcceptance) ... ok
+test_color_roundtrip_and_crop (test_hyperprior.HyperpriorAcceptance) ... ok
+test_nonzero_latent_real_entropy_roundtrip (test_hyperprior.HyperpriorAcceptance) ... ok
+test_original_components_and_layout (test_hyperprior.HyperpriorAcceptance) ... ok
+test_rgb_bytes_fresh_receiver_bpp_and_synthesis (test_hyperprior.HyperpriorAcceptance) ... ok
+test_training_gradients_and_aux_optimizer (test_hyperprior.HyperpriorAcceptance) ... ok
+test_analysis_migration_and_bitstream_unchanged (test_ldmic_alignment.LDMICAlignment) ... ok
+test_bidirectional_spatial_effect_at_both_scales (test_ldmic_alignment.LDMICAlignment) ... ok
+test_cache_dtype_and_device_validation (test_ldmic_alignment.LDMICAlignment) ... ok
+test_first_frame_official_spatial_path_and_execution_order (test_ldmic_alignment.LDMICAlignment) ... ok
+test_key_bias_cancels_and_legacy_aliases (test_ldmic_alignment.LDMICAlignment) ... ok
+test_official_attention_and_jct_numerical_oracles (test_ldmic_alignment.LDMICAlignment) ... ok
+test_structure_shared_views_and_separate_scales (test_ldmic_alignment.LDMICAlignment) ... ok
+test_unequal_attention_math_and_gradients (test_ldmic_alignment.LDMICAlignment) ... ok
+test_color_and_geometry (test_lightweight_encoder.EncoderAcceptance) ... ok
+test_hyperprior_interface (test_lightweight_encoder.EncoderAcceptance) ... ok
+test_pair_reuses_parameters_and_accumulates_gradients (test_lightweight_encoder.EncoderAcceptance) ... ok
+test_profile_against_original_ga (test_lightweight_encoder.EncoderAcceptance) ... ok
+test_structure_and_forward_backward (test_lightweight_encoder.EncoderAcceptance) ... ok
+
+----------------------------------------------------------------------
+Ran 65 tests in 87.267s
+
+OK
+
+episode=42 frame=0 history=0 main=256x256 wrist=256x256 bytes=21924 bpp=1.338135
+
+episode=42 frame=1 history=1 main=255x257 wrist=129x127 bytes=8904 bpp=0.869552
+
+episode=42 frame=2 history=2 main=17x31 wrist=1x1 bytes=1524 bpp=23.090909
+
+episode=42 frame=3 history=2 main=65x71 wrist=31x49 bytes=2360 bpp=3.077926
+
+episode=43 frame=0 history=0 main=63x65 wrist=33x47 bytes=4664 bpp=3.304286
+
+Gain: 8 discrete levels, 37 rate/shape stream checks; exact forward/decode equality
+
+v3/v4 migrated random decoder sequence max_abs_error=0
+
+HyperGain rate=(0, 0.0) RGB=2x256x256: Ry=128 Rz=11136 Rz_ratio=0.988636 actual_bpp=0.088867
+
+HyperGain rate=(3, 0.5) RGB=2x255x257: Ry=93440 Rz=13952 Rz_ratio=0.129917 actual_bpp=0.822278
+
+HyperGain rate=(5, 0.25) RGB=2x17x31: Ry=11712 Rz=768 Rz_ratio=0.061538 actual_bpp=12.204934
+
+HyperGain rate=(6, 1.0) RGB=2x1x1: Ry=20160 Rz=768 Rz_ratio=0.036697 actual_bpp=10656.000000
+
+HyperGain rate=(7, 0.0) RGB=2x64x128: Ry=40192 Rz=1472 Rz_ratio=0.035330 actual_bpp=2.566406
+
+B=1 RGB=256x256 latent=(1, 64, 16, 16) bytes=728 actual_bpp=0.088867 payload_bpp=0.085938 estimated_bpp=0.084446
+
+B=2 RGB=255x257 latent=(2, 64, 16, 20) bytes=1792 actual_bpp=0.109377 payload_bpp=0.107424 estimated_bpp=0.105559
+
+B=1 RGB=17x31 latent=(1, 64, 4, 4) bytes=80 actual_bpp=1.214421 payload_bpp=0.850095 estimated_bpp=0.656339
+
+B=1 RGB=1x1 latent=(1, 64, 4, 4) bytes=80 actual_bpp=640.000000 payload_bpp=448.000000 estimated_bpp=345.890411
+
+Ballé quality=1 g_a: parameters=1,493,312; MACs=2,764,046,336; FLOPs=5,528,092,672
+('0', 'Conv 3->128 k=5 s=2 g=1', (1, 128, 128, 128), 9728, 157286400)
+('1', 'GDN (channel mixing only)', (1, 128, 128, 128), 16512, 268435456)
+('2', 'Conv 128->128 k=5 s=2 g=1', (1, 128, 64, 64), 409728, 1677721600)
+('3', 'GDN (channel mixing only)', (1, 128, 64, 64), 16512, 67108864)
+('4', 'Conv 128->128 k=5 s=2 g=1', (1, 128, 32, 32), 409728, 419430400)
+('5', 'GDN (channel mixing only)', (1, 128, 32, 32), 16512, 16777216)
+('6', 'Conv 128->192 k=5 s=2 g=1', (1, 192, 16, 16), 614592, 157286400)
+
+Lightweight g_a: parameters=12,558; MACs=21,495,808; FLOPs=42,991,616
+('stages.0.0.depthwise', 'Conv 3->3 k=3 s=2 g=3', (1, 3, 128, 128), 30, 442368)
+('stages.0.0.pointwise', 'Conv 3->32 k=1 s=1 g=1', (1, 32, 128, 128), 128, 1572864)
+('stages.0.1', 'Conv 32->32 k=3 s=1 g=32', (1, 32, 128, 128), 320, 4718592)
+('stages.1.0.depthwise', 'Conv 32->32 k=3 s=2 g=32', (1, 32, 64, 64), 320, 1179648)
+('stages.1.0.pointwise', 'Conv 32->48 k=1 s=1 g=1', (1, 48, 64, 64), 1584, 6291456)
+('stages.1.1', 'Conv 48->48 k=3 s=1 g=48', (1, 48, 64, 64), 480, 1769472)
+('stages.2.0.depthwise', 'Conv 48->48 k=3 s=2 g=48', (1, 48, 32, 32), 480, 442368)
+('stages.2.0.pointwise', 'Conv 48->64 k=1 s=1 g=1', (1, 64, 32, 32), 3136, 3145728)
+('stages.2.1', 'Conv 64->64 k=3 s=1 g=64', (1, 64, 32, 32), 640, 589824)
+('stages.3.0.depthwise', 'Conv 64->64 k=3 s=2 g=64', (1, 64, 16, 16), 640, 147456)
+('stages.3.0.pointwise', 'Conv 64->64 k=1 s=1 g=1', (1, 64, 16, 16), 4160, 1048576)
+('stages.3.1', 'Conv 64->64 k=3 s=1 g=64', (1, 64, 16, 16), 640, 147456)

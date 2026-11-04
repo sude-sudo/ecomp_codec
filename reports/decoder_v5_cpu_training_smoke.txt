@@ -1,0 +1,4 @@
+{"frame_index": 0, "history_used": 0, "loss": 273.7829895019531, "estimated_bpp": 0.1510988026857376}
+{"frame_index": 1, "history_used": 1, "loss": 273.07855224609375, "estimated_bpp": 0.18090827763080597}
+{"frame_index": 2, "history_used": 2, "loss": 269.677734375, "estimated_bpp": 0.22666499018669128}
+CPU two-thread causal training smoke passed; no formal training started.

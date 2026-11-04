@@ -144,7 +144,7 @@ class HistoryFusionAge(unittest.TestCase):
         unchanged = with_temporal_reference_init(state4)
         for key in state4:
             torch.testing.assert_close(unchanged[key],state4[key],atol=0,rtol=0)
-        old_codec,new_codec = DualViewCodec(levels=6).eval(),DualViewCodec(levels=6).eval()
+        old_codec,new_codec = DualViewCodec(levels=6, decoder_config='baseline').eval(),DualViewCodec(levels=6, decoder_config='baseline').eval()
         old_codec.decoder = DecoderV3().eval()
         old_codec.update(force=True)
         new_codec.load_state_dict(with_temporal_reference_init(old_codec.state_dict()),strict=True)
@@ -170,7 +170,7 @@ class HistoryFusionAge(unittest.TestCase):
 
     @torch.no_grad()
     def test_nonzero_age_fusion_real_stream_receiver_reset_and_unchanged_bytes(self):
-        sender,receiver,old = DualViewCodec().eval(),DualViewCodec().eval(),DualViewCodec().eval()
+        sender,receiver,old = DualViewCodec(decoder_config='baseline').eval(),DualViewCodec(decoder_config='baseline').eval(),DualViewCodec(decoder_config='baseline').eval()
         old.decoder = DecoderV3().eval()
         sender.decoder.history_fuse.weight.add_(torch.randn_like(sender.decoder.history_fuse.weight)*.01)
         sender.decoder.history_fuse.bias.add_(.02)

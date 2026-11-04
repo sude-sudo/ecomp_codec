@@ -127,7 +127,7 @@ def main():
     args.output.mkdir(parents=True,exist_ok=False)
     torch.set_num_threads(2)
     torch.manual_seed(20261104)
-    old,new = DualViewCodec().cpu().eval(),DualViewCodec().cpu().eval()
+    old,new = DualViewCodec(decoder_config='baseline').cpu().eval(),DualViewCodec(decoder_config='baseline').cpu().eval()
     old.decoder = DecoderV2().cpu().eval()
     new.decoder = DecoderV3().cpu().eval()  # Keep this historical v2/v3 comparison fixed.
     migrated = old.decoder.state_dict().copy()
