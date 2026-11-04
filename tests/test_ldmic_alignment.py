@@ -1,6 +1,7 @@
 """Alignment to verbatim LDMIC 4cf7318 regular-forward oracle, CPU only."""
 
 import unittest
+from dataclasses import replace
 from unittest import mock
 
 import torch
@@ -8,7 +9,7 @@ from torch import nn
 from compressai.layers import GDN, ResidualBlock
 from compressai.models.utils import deconv
 
-from compress.decoder import (DecodedFrame, DecoderState, EfficientAttention,
+from compress.decoder import (DecoderState, EfficientAttention,
                               EfficientCrossAttention, JointContextTransfer, SpatioTemporalDecoder)
 from compress.dual_view_codec import DualViewCodec
 from compress.lightweight_encoder import ImageGeometry, ycocg_to_rgb
@@ -144,7 +145,9 @@ class LDMICAlignment(unittest.TestCase):
                 lambda module, inputs, output, tag=name: trace.append((tag, tuple(inputs[0].shape[-2:])))))
         with torch.no_grad(), \
              mock.patch.object(decoder.temporal,"forward",side_effect=AssertionError("temporal called")), \
-             mock.patch.object(decoder.temporal_project,"forward",side_effect=AssertionError("residual called")):
+             mock.patch.object(decoder.temporal_project,"forward",side_effect=AssertionError("residual called")), \
+             mock.patch.object(decoder.temporal_wrist,"forward",side_effect=AssertionError("wrist temporal called")), \
+             mock.patch.object(decoder.temporal_project_wrist,"forward",side_effect=AssertionError("wrist residual called")):
             actual = decoder(main,wrist,geometry,geometry)
             expected = oracle(main,wrist)
         for h in handles:
@@ -175,12 +178,12 @@ class LDMICAlignment(unittest.TestCase):
         geometry = ImageGeometry((64,64),(64,64))
         first = decoder(main,wrist,geometry,geometry)
         old = first["state"].history[0]
-        for entry in (DecodedFrame(old.latent.double(),old.rgb),
-                      DecodedFrame(old.latent,old.rgb.double()),
-                      DecodedFrame(torch.empty_like(old.latent,device="meta"),old.rgb),
-                      DecodedFrame(old.latent,torch.empty_like(old.rgb,device="meta"))):
-            with self.assertRaisesRegex(ValueError,"batch/device/dtype"):
-                decoder(main,wrist,geometry,geometry,DecoderState(0,1,(entry,)),frame_index=1)
+        for field in ("main_latent", "main_rgb", "wrist_latent", "wrist_rgb"):
+            original = getattr(old, field)
+            for bad in (original.double(), torch.empty_like(original, device="meta"), original.repeat(2,1,1,1)):
+                entry = replace(old, **{field: bad})
+                with self.assertRaisesRegex(ValueError,"batch/device/dtype"):
+                    decoder(main,wrist,geometry,geometry,DecoderState(0,1,(entry,)),frame_index=1)
 
     def test_analysis_migration_and_bitstream_unchanged(self):
         old = DualViewCodec().eval()

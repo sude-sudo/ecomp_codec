@@ -1,6 +1,7 @@
 """CPU acceptance of decoder, causal state, and real dual-view frame packets."""
 
 import io
+from dataclasses import replace
 import struct
 import unittest
 from unittest import mock
@@ -8,7 +9,7 @@ from unittest import mock
 import torch
 from torch.nn import functional as F
 
-from compress.decoder import DecodedFrame, DecoderState, EfficientCrossAttention, SpatioTemporalDecoder
+from compress.decoder import DecoderState, EfficientCrossAttention, SpatioTemporalDecoder
 from compress.dual_view_codec import DualViewCodec
 from compress.lightweight_encoder import ImageGeometry
 
@@ -44,23 +45,36 @@ class DecoderAcceptance(unittest.TestCase):
         self.assertGreater((first["wrist_hat"] - changed_wrist["wrist_hat"]).abs().max().item(), 1e-8)
         next_frame = self.decoder(main, wrist, gm, gw, first["state"], frame_index=1)
         entry = first["state"].history[0]
-        for altered in (DecodedFrame(entry.latent + 5, entry.rgb),
-                        DecodedFrame(entry.latent, entry.rgb + 3)):
+        for altered in (replace(entry, main_latent=entry.main_latent + 5),
+                        replace(entry, main_rgb=entry.main_rgb + 3)):
             state = DecoderState(0, 1, (altered,))
             result = self.decoder(main, wrist, gm, gw, state, frame_index=1)
             self.assertGreater((result["main_hat"] - next_frame["main_hat"]).abs().max().item(), 1e-8)
             torch.testing.assert_close(result["wrist_hat"], next_frame["wrist_hat"], atol=0, rtol=0)
+        for altered in (replace(entry, wrist_latent=entry.wrist_latent + 5),
+                        replace(entry, wrist_rgb=entry.wrist_rgb + 3)):
+            state = DecoderState(0, 1, (altered,))
+            result = self.decoder(main, wrist, gm, gw, state, frame_index=1)
+            self.assertGreater((result["wrist_hat"] - next_frame["wrist_hat"]).abs().max().item(), 1e-8)
+            torch.testing.assert_close(result["main_hat"], next_frame["main_hat"], atol=0, rtol=0)
 
     def test_decoder_gradients_detached_history_and_copy(self):
         geometry = ImageGeometry((64, 64), (64, 64))
         old = torch.randn(1, 64, 4, 4, requires_grad=True)
-        first = self.decoder(old, torch.randn_like(old), geometry, geometry)
+        old_wrist = torch.randn_like(old, requires_grad=True)
+        first = self.decoder(old, old_wrist, geometry, geometry)
         cached = first["state"].history[0]
-        self.assertFalse(cached.latent.requires_grad or cached.rgb.requires_grad)
-        saved = cached.rgb.clone()
+        fields = ("main_latent", "main_rgb", "wrist_latent", "wrist_rgb")
+        saved = {name: getattr(cached, name).clone() for name in fields}
+        for name in fields:
+            self.assertFalse(getattr(cached, name).requires_grad)
         with torch.no_grad():
             first["main_hat"].zero_()
-        torch.testing.assert_close(cached.rgb, saved, atol=0, rtol=0)
+            first["wrist_hat"].zero_()
+            old.add_(7)
+            old_wrist.add_(7)
+        for name in fields:
+            torch.testing.assert_close(getattr(cached, name), saved[name], atol=0, rtol=0)
         main = torch.randn_like(old, requires_grad=True)
         wrist = torch.randn_like(old, requires_grad=True)
         result = self.decoder(main, wrist, geometry, geometry, first["state"], frame_index=1)
@@ -75,6 +89,24 @@ class DecoderAcceptance(unittest.TestCase):
         self.assertGreater(main.grad.abs().sum().item(), 0)
         self.assertGreater(wrist.grad.abs().sum().item(), 0)
         self.assertIsNone(old.grad)
+        self.assertIsNone(old_wrist.grad)
+        for main_branch, wrist_branch in ((self.decoder.temporal, self.decoder.temporal_wrist),
+                                           (self.decoder.temporal_project, self.decoder.temporal_project_wrist)):
+            self.assertEqual(list(main_branch.state_dict()), list(wrist_branch.state_dict()))
+            for a, b in zip(main_branch.parameters(), wrist_branch.parameters()):
+                self.assertNotEqual(a.data_ptr(), b.data_ptr())
+
+    def test_each_temporal_gradient_depends_only_on_its_view_loss(self):
+        geometry = ImageGeometry((64, 64), (64, 64))
+        main, wrist = torch.randn(1, 64, 4, 4), torch.randn(1, 64, 4, 4)
+        first = self.decoder(main, wrist, geometry, geometry)
+        for key, active, inactive in (("main_hat", self.decoder.temporal, self.decoder.temporal_wrist),
+                                      ("wrist_hat", self.decoder.temporal_wrist, self.decoder.temporal)):
+            self.decoder.zero_grad(set_to_none=True)
+            out = self.decoder(main, wrist, geometry, geometry, first["state"], frame_index=1)
+            out[key].square().mean().backward()
+            self.assertGreater(active.values.weight.grad.abs().sum().item(), 0)
+            self.assertTrue(all(p.grad is None for p in inactive.parameters()))
 
 
 class DualViewAcceptance(unittest.TestCase):
@@ -110,10 +142,11 @@ class DualViewAcceptance(unittest.TestCase):
                         self.assertGreater(parameter.grad.abs().sum().item(), 0, name)
             state = result["state"]
             self.assertEqual(len(state.history), min(i + 1, 2))
-        parameter = self.model.decoder.temporal.value.weight
-        old = parameter.detach().clone()
+        parameters = [self.model.decoder.temporal.value.weight, self.model.decoder.temporal_wrist.value.weight]
+        old = [p.detach().clone() for p in parameters]
         torch.optim.Adam([p for p in self.model.parameters() if p is not quantiles], lr=1e-4).step()
-        self.assertFalse(torch.equal(old, parameter))
+        for before, parameter in zip(old, parameters):
+            self.assertFalse(torch.equal(before, parameter))
         self.model.zero_grad(set_to_none=True)
         self.model.aux_loss().backward()
         self.assertGreater(quantiles.grad.abs().sum().item(), 0)
@@ -151,10 +184,11 @@ class DualViewAcceptance(unittest.TestCase):
             self.assertEqual(actual["rates"]["main"], {"level": i, "alpha": .25})
             self.assertEqual(actual["rates"]["wrist"], {"level": 7, "alpha": 0.})
             for a, e in zip(actual["state"].history, expected["state"].history):
-                torch.testing.assert_close(a.latent, e.latent, atol=0, rtol=0)
-                torch.testing.assert_close(a.rgb, e.rgb, atol=0, rtol=0)
-                self.assertFalse(a.rgb.requires_grad or a.latent.requires_grad)
-            torch.testing.assert_close(actual["state"].history[-1].rgb, actual["main_hat"], atol=0, rtol=0)
+                for field in ("main_latent", "main_rgb", "wrist_latent", "wrist_rgb"):
+                    torch.testing.assert_close(getattr(a, field), getattr(e, field), atol=0, rtol=0)
+                    self.assertFalse(getattr(a, field).requires_grad)
+            torch.testing.assert_close(actual["state"].history[-1].main_rgb, actual["main_hat"], atol=0, rtol=0)
+            torch.testing.assert_close(actual["state"].history[-1].wrist_rgb, actual["wrist_hat"], atol=0, rtol=0)
             pixels = b * (mh * mw + wh * ww)
             self.assertEqual(actual["actual_bpp"], len(packet) * 8 / pixels)
             self.assertEqual(actual["num_bytes"], len(packet))
@@ -192,6 +226,7 @@ class DualViewAcceptance(unittest.TestCase):
             self.assertEqual(reset["history_used"], 0)
             self.assertEqual(len(reset["state"].history), 1)
             torch.testing.assert_close(reset["main_hat"], clean["main_hat"], atol=0, rtol=0)
+            torch.testing.assert_close(reset["wrist_hat"], clean["wrist_hat"], atol=0, rtol=0)
         with self.assertRaisesRegex(ValueError, "batch"):
             self.model.decompress(self.model.compress(main.repeat(2, 1, 1, 1),
                                   wrist.repeat(2, 1, 1, 1), 11, 1), first["state"])

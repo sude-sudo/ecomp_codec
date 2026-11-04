@@ -16,6 +16,7 @@ sys.path[:0] = [str(ROOT), str(ROOT / "tests")]
 from compress.decoder import EfficientAttention, JointContextTransfer
 from compress.dual_view_codec import DualViewCodec
 from fixtures.decoder_v1 import SpatioTemporalDecoder as LegacyDecoder
+from fixtures.decoder_v2 import SpatioTemporalDecoder as AlignedDecoder
 from fixtures.ldmic_official import EfficientAttention as OfficialAttention
 from fixtures.ldmic_official import JointContextTransfer as OfficialJCT
 
@@ -67,6 +68,7 @@ def main():
     torch.set_num_threads(2)
     torch.manual_seed(20261103)
     new = DualViewCodec().eval()
+    new.decoder = AlignedDecoder().eval()  # Fixed v2 baseline; current production decoder is v3.
     old = DualViewCodec().eval()
     old.decoder = LegacyDecoder().eval()
     new.update(force=True)

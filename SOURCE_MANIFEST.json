@@ -29,7 +29,7 @@
     },
     {
       "path": "compress/decoder.py",
-      "sha256": "2064dcb7f48802d59463d0f2b95a4b3e984ad2904993161683cece02e0cdc3d9",
+      "sha256": "3092f3f2001401108aa4bd34d85514296b49f03a5683b6cb05854f303a318e6e",
       "identical_to_source": false,
       "source_sha256": "4affac49f20bf2a0019ba9664b4e624845d057ad5dab542413fda4e4427cbb33"
     },
@@ -55,9 +55,24 @@
     },
     {
       "path": "tests/test_dual_view_codec.py",
-      "sha256": "21144800a92ff6e38712ecba556b2678a7ca970a28c461ac42571a0d10c8b125",
+      "sha256": "fae4977888ea68914f0442d061181b9ff841db5e76b769e3bf079203b971bec5",
       "identical_to_source": false,
       "source_sha256": "5cb70dbc36b46147fdbaaa36517fdbf911b4ab1f0af813aab44639c657e0fdba"
+    },
+    {
+      "path": "tests/fixtures/decoder_v2.py",
+      "sha256": "8eea9e3998e4a190ee5676d96c9cc504ca98242611a8edcd916b00850acd36f5",
+      "identical_to_source": false
+    },
+    {
+      "path": "tests/test_dual_temporal.py",
+      "sha256": "5d859f7ef6b708a060dffd98bb0803c0feedba11b7dcefddf0c38dbfe15c15ae",
+      "identical_to_source": false
+    },
+    {
+      "path": "tools/benchmark_dual_temporal.py",
+      "sha256": "e4c4f15863b667d60b8ac234cb099d8b1f12fe925d0973afbde5efee58f9fb01",
+      "identical_to_source": false
     }
   ],
   "packaging_changes": [
@@ -71,10 +86,11 @@
     "Other EmbodiedComp code and Git history",
     "Server configuration and credentials"
   ],
-  "codec_model_version": "hypergain-v1/decoder-v2",
+  "codec_model_version": "hypergain-v1/decoder-v3",
   "post_export_changes": [
     "Add independent log_hyper_gain/log_inverse_hyper_gain and matching forward/real-coding paths; keep Encoder, Decoder, DualViewCodec and wire layouts unchanged.",
     "Add explicit legacy identity migration, HyperGain CPU tests and compatibility/comparison documentation.",
-    "Align decoder-v2 spatial JCT/EfficientAttention/Deconv+IGDN to LDMIC 4cf7318 at M=N=64; keep main-only causal temporal residual after the second JCT. Analysis and wire layouts unchanged."
+    "Align decoder-v2 spatial JCT/EfficientAttention/Deconv+IGDN to LDMIC 4cf7318 at M=N=64; keep main-only causal temporal residual after the second JCT. Analysis and wire layouts unchanged.",
+    "Add independent wrist temporal attention/project after atten_4; paired per-view detached history, explicit v2 warm-start/state-reset documentation, CPU regression tests and fixed v2/v3 performance comparison. Existing spatial blocks, analysis and wire layouts unchanged."
   ]
 }

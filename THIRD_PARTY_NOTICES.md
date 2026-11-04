@@ -13,7 +13,7 @@
   The decoder module retains the MIT notice. `tests/fixtures/ldmic_official.py` contains
   attributed regular-forward class excerpts as a numerical oracle, not a rewritten oracle.
   Changes: M=N=64, independent query/reference spatial shapes, project RGB output
-  and a separate main-only temporal residual. This is not a full LDMIC reproduction.
+  and separate per-view temporal attention/residuals. This is not a full LDMIC reproduction.
 - **GainedVAE** — https://github.com/mmSir/GainedVAE
   Used as a third-party implementation reference; it is not the paper's official code.
   No GainedVAE source is vendored. `compress/gain.py` independently implements

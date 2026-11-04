@@ -116,7 +116,7 @@ def main():
         receiver = DualViewCodec().eval()
         receiver.load_state_dict(model.state_dict())
         del receiver.analysis.g_a
-        calls = {"spatial": 0, "temporal": 0}
+        calls = {"spatial": 0, "temporal": 0, "temporal_wrist": 0}
         timing = {}
 
         def count(name):
@@ -130,8 +130,9 @@ def main():
         def stop(*unused):
             timing["reconstruction_ms"] = (perf_counter() - timing["start"]) * 1000
 
-        handles = [receiver.decoder.spatial.register_forward_hook(count("spatial")),
+        handles = [receiver.decoder.atten_3.register_forward_hook(count("spatial")),
                    receiver.decoder.temporal.register_forward_hook(count("temporal")),
+                   receiver.decoder.temporal_wrist.register_forward_hook(count("temporal_wrist")),
                    receiver.decoder.register_forward_pre_hook(start),
                    receiver.decoder.register_forward_hook(stop)]
         state = None
@@ -164,8 +165,8 @@ def main():
                         raise AssertionError("Missing history was accepted")
                 assert actual["history_used"] == min(i, 2)
                 for cached, reference in zip(actual["state"].history, expected["state"].history):
-                    torch.testing.assert_close(cached.latent, reference.latent, atol=0, rtol=0)
-                    torch.testing.assert_close(cached.rgb, reference.rgb, atol=0, rtol=0)
+                    for field in ("main_latent", "main_rgb", "wrist_latent", "wrist_rgb"):
+                        torch.testing.assert_close(getattr(cached, field), getattr(reference, field), atol=0, rtol=0)
                 psnrs = {}
                 for view, original in (("main", main_rgb), ("wrist", wrist_rgb)):
                     reconstructed = actual[f"{view}_hat"]
@@ -192,7 +193,7 @@ def main():
                 f"{np.mean([r['psnr_wrist_db'] for r in metric_rows[-3:]]):.2f} dB")
         for handle in handles:
             handle.remove()
-        assert calls["spatial"] > 0 and calls["temporal"] > 0
+        assert all(value > 0 for value in calls.values())
         checks[f"{stage}_attention_calls"] = calls
 
     evaluate("before")

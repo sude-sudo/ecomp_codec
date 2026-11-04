@@ -195,7 +195,8 @@ class HyperGainAcceptance(unittest.TestCase):
         del receiver.analysis.g_a
         del receiver.analysis.hyperprior.h_a
         forward_state = decoded_state = None
-        with mock.patch.object(receiver.decoder.temporal, "forward", wraps=receiver.decoder.temporal.forward) as temporal:
+        with mock.patch.object(receiver.decoder.temporal, "forward", wraps=receiver.decoder.temporal.forward) as temporal, \
+             mock.patch.object(receiver.decoder.temporal_wrist, "forward", wraps=receiver.decoder.temporal_wrist.forward) as temporal_wrist:
             for i, (episode, frame) in enumerate(((9, 0), (9, 1), (9, 2), (10, 0), (10, 1))):
                 main, wrist = torch.rand(1, 3, 65 + i, 71), torch.rand(1, 3, 31, 49 + i)
                 rates = {"main_rate": (3, .5), "wrist_rate": (6, .2)}
@@ -208,8 +209,8 @@ class HyperGainAcceptance(unittest.TestCase):
                 self.assertEqual(actual["rates"], {"main": {"level": 3, "alpha": .5},
                                                    "wrist": {"level": 6, "alpha": .2}})
                 for a, b in zip(actual["state"].history, expected["state"].history):
-                    torch.testing.assert_close(a.latent, b.latent, atol=0, rtol=0)
-                    torch.testing.assert_close(a.rgb, b.rgb, atol=0, rtol=0)
+                    for field in ("main_latent", "main_rgb", "wrist_latent", "wrist_rgb"):
+                        torch.testing.assert_close(getattr(a, field), getattr(b, field), atol=0, rtol=0)
                 magic, ep, fi, nm, nw = struct.unpack_from(">4sQIII", packet)
                 self.assertEqual((magic, ep, fi), (b"ECD1", episode, frame))
                 view_stats = [entropy_bits(packet[24:24+nm]), entropy_bits(packet[24+nm:])]
@@ -219,6 +220,7 @@ class HyperGainAcceptance(unittest.TestCase):
                 self.assertEqual(actual["actual_bpp"], 8 * len(packet) / sum(p for _, _, p, _ in view_stats))
                 forward_state, decoded_state = expected["state"], actual["state"]
             self.assertEqual(temporal.call_count, 3)
+            self.assertEqual(temporal_wrist.call_count, 3)
 
     def test_legacy_checkpoint_explicit_migration_and_old_stream(self):
         for model in (LatentGain(), GainedEncoderHyperprior().eval(), DualViewCodec().eval()):

@@ -1,11 +1,11 @@
-"""decoder-v2: LDMIC spatial decoder adapted to this project's decoded latents.
+"""decoder-v3: LDMIC spatial decoder with independent per-view temporal attention.
 
 JCT structure, EfficientAttention math and decoder_1/decoder_2 are adapted from
 Xinjie-Q/LDMIC, commit 4cf7318505a001c13d9946581f77e2b4af224246,
 models/ldmic.py. Copyright (c) 2023 Xinjie-Q, MIT License (full notice below).
 Necessary adaptations: M=N=64, separate query/reference spatial dimensions,
 and the existing RGB-logits/YCoCg conversion, sigmoid and crop contract.
-The detached causal history and main-only temporal residual after atten_4 are
+The detached causal history and per-view temporal residuals after atten_4 are
 project extensions, not part of LDMIC. This is not a full paper reproduction.
 """
 
@@ -40,8 +40,12 @@ from .lightweight_encoder import ImageGeometry, ycocg_to_rgb
 
 @dataclass(frozen=True)
 class DecodedFrame:
-    latent: Tensor
-    rgb: Tensor
+    """One synchronized frame pair, copied from decoder-owned reconstructions."""
+
+    main_latent: Tensor
+    main_rgb: Tensor
+    wrist_latent: Tensor
+    wrist_rgb: Tensor
 
 
 @dataclass(frozen=True)
@@ -50,7 +54,9 @@ class DecoderState:
 
     A batch represents synchronized streams from the same episode, with stable
     batch ordering. Use separate states for independent episodes/receivers.
-    Runtime history is deliberately not part of a model's state_dict.
+    Each history entry contains both views at the same frame. Runtime history is
+    deliberately not part of a model's state_dict. Pre-v3 states are incompatible;
+    restart from frame_index=0 after upgrading.
     """
 
     episode_id: int
@@ -145,6 +151,8 @@ class SpatioTemporalDecoder(nn.Module):
         self.history_image = nn.Conv2d(3, 64, 1)
         self.temporal = EfficientCrossAttention()
         self.temporal_project = nn.Conv2d(64, 64, 1)
+        self.temporal_wrist = EfficientCrossAttention()
+        self.temporal_project_wrist = nn.Conv2d(64, 64, 1)
 
     def _reconstruct(self, feature: Tensor, geometry: ImageGeometry) -> Tensor:
         feature = self.decoder_2(feature)
@@ -170,24 +178,35 @@ class SpatioTemporalDecoder(nn.Module):
                 raise ValueError("Incomplete decoder history; restart at frame 0")
             history = state.history[-self.history_size:]
         for entry in history:
-            if (entry.latent.shape[0] != main.shape[0] or entry.rgb.shape[0] != main.shape[0]
-                    or entry.latent.device != main.device or entry.latent.dtype != main.dtype
-                    or entry.rgb.device != main.device or entry.rgb.dtype != main.dtype):
-                raise ValueError("History batch/device/dtype changed; restart at frame 0")
+            if not isinstance(entry, DecodedFrame) or not all(hasattr(entry, name) for name in
+                    ("main_latent", "main_rgb", "wrist_latent", "wrist_rgb")):
+                raise ValueError("Incompatible decoder history; restart at frame 0")
+            for latent, rgb, current in ((entry.main_latent, entry.main_rgb, main),
+                                         (entry.wrist_latent, entry.wrist_rgb, wrist)):
+                if (latent.shape[0] != current.shape[0] or rgb.shape[0] != current.shape[0]
+                        or latent.device != current.device or latent.dtype != current.dtype
+                        or rgb.device != current.device or rgb.dtype != current.dtype):
+                    raise ValueError("History batch/device/dtype changed; restart at frame 0")
 
         main_feature, wrist_feature = self.atten_3(main, wrist)
         main_feature, wrist_feature = self.atten_4(self.decoder_1(main_feature),
                                                  self.decoder_1(wrist_feature))
         if history:
-            references = tuple(self.content(entry.latent) + self.history_image(
-                F.adaptive_avg_pool2d(entry.rgb, entry.latent.shape[-2:])) for entry in history)
+            references = tuple(self.content(entry.main_latent) + self.history_image(
+                F.adaptive_avg_pool2d(entry.main_rgb, entry.main_latent.shape[-2:])) for entry in history)
             temporal = self.temporal(self.content(main), references)
             main_feature = main_feature + self.temporal_project(
                 F.interpolate(temporal, size=main_feature.shape[-2:], mode="nearest"))
+            references_wrist = tuple(self.content(entry.wrist_latent) + self.history_image(
+                F.adaptive_avg_pool2d(entry.wrist_rgb, entry.wrist_latent.shape[-2:])) for entry in history)
+            temporal_wrist = self.temporal_wrist(self.content(wrist), references_wrist)
+            wrist_feature = wrist_feature + self.temporal_project_wrist(
+                F.interpolate(temporal_wrist, size=wrist_feature.shape[-2:], mode="nearest"))
         main_rgb = self._reconstruct(main_feature, main_geometry)
         wrist_rgb = self._reconstruct(wrist_feature, wrist_geometry)
         # Copy as well as detach: caller mutation of outputs cannot corrupt cache.
-        entry = DecodedFrame(main.detach().clone(), main_rgb.detach().clone())
+        entry = DecodedFrame(main.detach().clone(), main_rgb.detach().clone(),
+                             wrist.detach().clone(), wrist_rgb.detach().clone())
         next_state = DecoderState(episode_id, frame_index + 1,
                                   (*history, entry)[-self.history_size:])
         return {"main_hat": main_rgb, "wrist_hat": wrist_rgb,
