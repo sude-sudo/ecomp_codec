@@ -1,0 +1,19 @@
+test_activation_and_legacy_configuration_regression (test_temporal1_dualview_time.TemporalOneTimeAttentionTests) ... ok
+test_continuous_window_reset_and_strict_state_validation (test_temporal1_dualview_time.TemporalOneTimeAttentionTests) ... ok
+test_default_width_256_shapes_different_views_and_batches (test_temporal1_dualview_time.TemporalOneTimeAttentionTests) ... ok
+test_hand_calculated_time_operator_and_t1_identity (test_temporal1_dualview_time.TemporalOneTimeAttentionTests) ... ok
+test_invalid_shapes_and_configuration_are_rejected (test_temporal1_dualview_time.TemporalOneTimeAttentionTests) ... ok
+test_no_rgb_modules_cache_and_first_frame_zero (test_temporal1_dualview_time.TemporalOneTimeAttentionTests) ... ok
+test_other_view_history_changes_output_for_both_targets_and_scales (test_temporal1_dualview_time.TemporalOneTimeAttentionTests) ... ok
+test_parallel_query_sources_concat_and_single_residual (test_temporal1_dualview_time.TemporalOneTimeAttentionTests) ... ok
+test_qkv_shapes_and_both_reference_views_are_executed (test_temporal1_dualview_time.TemporalOneTimeAttentionTests) ... ok
+test_real_packet_10_frames_independent_receiver_and_explicit_migration (test_temporal1_dualview_time.TemporalOneTimeAttentionTests) ... ok
+test_temporal1_only_previous_own_view_latent_and_features (test_temporal1_dualview_time.TemporalOneTimeAttentionTests) ... ok
+test_temporal_window_clipping_and_no_time_permutation_claim (test_temporal1_dualview_time.TemporalOneTimeAttentionTests) ... ok
+test_time_permutation_invariance_without_encoding (test_temporal1_dualview_time.TemporalOneTimeAttentionTests) ... ok
+test_two_scales_all_branches_and_cross_view_qkv_gradients (test_temporal1_dualview_time.TemporalOneTimeAttentionTests) ... ok
+
+----------------------------------------------------------------------
+Ran 14 tests in 5.816s
+
+OK

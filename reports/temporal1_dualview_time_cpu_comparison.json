@@ -1,0 +1,84 @@
+{
+  "device": "cpu",
+  "threads": 2,
+  "batch": 1,
+  "view_sizes": [
+    256,
+    256
+  ],
+  "history": 8,
+  "warmup": 1,
+  "samples": 3,
+  "input": "synthetic random latents and valid independently cloned cached features; different untrained models; decoder-only",
+  "caveat": "Shared host, three samples only, excludes coding. This is a measured configuration comparison, not proof of RD improvement or universal speedup.",
+  "cases": [
+    {
+      "config": "tri_fusion8",
+      "history": 8,
+      "parameters": {
+        "codec": 20476929,
+        "encoder": 12558,
+        "analysis": 502222,
+        "decoder": 19974707,
+        "jct_low": 8579360,
+        "jct_high": 3089376,
+        "temporal": 4055408,
+        "short_temporal": 3034112,
+        "fusion": 835584
+      },
+      "cache_bytes": 69206016,
+      "median_ms": 1683.0836879089475,
+      "samples_ms": [
+        1683.0836879089475,
+        1711.2449840642512,
+        1666.048011975363
+      ],
+      "nominal_macs": {
+        "convolution": 45771849728,
+        "transposed_convolution": 10695475200,
+        "gdn": 0,
+        "linear": 9940500480,
+        "factorized_attention": 13844480,
+        "sdpa": 3758096384,
+        "temporal_axis_attention": 0,
+        "total": 70179766272
+      },
+      "peak_cpu_process_rss_bytes": 1077547008,
+      "gpu_peak_memory_bytes": null
+    },
+    {
+      "config": "tri_temporal1_t8",
+      "history": 8,
+      "parameters": {
+        "codec": 18896017,
+        "encoder": 12558,
+        "analysis": 502222,
+        "decoder": 18393795,
+        "jct_low": 8579360,
+        "jct_high": 3089376,
+        "temporal": 2474496,
+        "short_temporal": 1776640,
+        "fusion": 835584
+      },
+      "cache_bytes": 56623104,
+      "median_ms": 777.8518960112706,
+      "samples_ms": [
+        777.8518960112706,
+        783.3057900425047,
+        773.0069409590214
+      ],
+      "nominal_macs": {
+        "convolution": 47342157824,
+        "transposed_convolution": 10695475200,
+        "gdn": 0,
+        "linear": 0,
+        "factorized_attention": 11075584,
+        "sdpa": 0,
+        "temporal_axis_attention": 55574528,
+        "total": 58104283136
+      },
+      "peak_cpu_process_rss_bytes": 1144422400,
+      "gpu_peak_memory_bytes": null
+    }
+  ]
+}
