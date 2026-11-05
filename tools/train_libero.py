@@ -85,11 +85,12 @@ def main():
                   split='none; all trajectories available to training',
                   initialization=str(args.resume or args.migrate_from) if (args.resume or args.migrate_from) else 'random; ' + ('decoder-v4' if args.decoder_config=='baseline' else 'decoder-v5'),
                   encoder_output_activation='none',
-                  model_version='hypergain-v1/' + ('decoder-tri-fusion-v1' if args.decoder_config=='tri_fusion8'
+                  model_version='hypergain-v1/' + ('decoder-temporal1-dualview-time-norgb-v1' if args.decoder_config=='tri_temporal1_t8'
+                                                 else 'decoder-tri-fusion-v1' if args.decoder_config=='tri_fusion8'
                                                  else 'decoder-v4' if args.decoder_config=='baseline' else 'decoder-v5'),
                   decoder_config=args.decoder_config,
                   history_size=args.history_size if args.history_size is not None else CONFIGS[args.decoder_config][2],
-                  short_history_size=2 if args.decoder_config=='tri_fusion8' else None,
+                  short_history_size=1 if args.decoder_config=='tri_temporal1_t8' else 2 if args.decoder_config=='tri_fusion8' else None,
                   source_commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=Path(__file__).resolve().parents[1],text=True).strip(),
                   sequence='shuffle trajectories, chronological frames, detached causal history')
     if paper:
@@ -214,8 +215,10 @@ def main():
                         state = out['state']
                         step += 1
                         if hasattr(model.decoder, 'vts_low'):
-                            fusion_grad = model.decoder.vts_low.fuse[0].weight.grad
-                            age_grad = model.decoder.vts_low.age.weight.grad
+                            temporal = model.decoder.vts_low
+                            fusion = temporal.view_fusion if hasattr(temporal, 'view_fusion') else temporal.fuse
+                            fusion_grad = fusion[0].weight.grad
+                            age_grad = temporal.age.weight.grad if hasattr(temporal, 'age') else None
                         else:
                             fusion_grad = model.decoder.history_fuse.weight.grad
                             age_grad = model.decoder.temporal_age_embedding.weight.grad

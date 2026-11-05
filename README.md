@@ -8,6 +8,8 @@ V5 已完成 CPU 功能、梯度和开销验证，并已启动 LIBERO 十轮训�
 完整结构、六组消融配置、迁移与实测见 [Decoder-v5 报告](reports/decoder_v5_architecture.md)。
 
 本版新增可选 `tri_fusion8`，见 [三分支结构报告](reports/tri_fusion_decoder_architecture.md)。
+新一轮无 RGB 时间轴方案为显式配置 `tri_temporal1_t8`，见
+[Temporal-1 / 双视角时间 Attention 报告](reports/temporal1_dualview_time_norgb.md)。
 Encoder 末层 GELU 已移除，影响所有当前配置；下文历史版本间的字节一致性结论仅适用于
 当时相同的 Encoder 语义，不适用于跨本次激活变更的比较。新结构尚未做正式训练或 RD 评估。
 
@@ -288,6 +290,42 @@ python tools/train_libero.py --data /path/to/libero_spatial_hdf5 \
 关闭短分支；三个布尔值依次代表 spatial/short/long。`fusion_scales=('low',)`
 只在低尺度三路融合，高尺度仅保留 Spatial JCT。消融选项参与状态签名，收发端必须一致。
 详见 [结构与验证报告](reports/tri_fusion_decoder_architecture.md)。
+
+### Temporal-1 + 双视角沿时间 Attention：`tri_temporal1_t8`
+
+本配置保留三分支并行、两级尺度和逐相机 `cat(3C) → Conv1x1 → GELU → +current`。
+Spatial JCT 不变；短支路复用原 EfficientCrossAttention 的空间计算，**只读取同视角
+`history[-1]` 的 latent/对应尺度 Decoder 特征**，不是 T=1 的时间 Softmax。
+长支路对主、腕两套历史分别计算沿 T 的 Attention，再拼接两份结果并融合。
+
+| 尺度（图像256×256） | Query | 每个历史视角 Key/Value | 时间权重 | 三分支 Concat |
+|---|---|---|---|---|
+| Low | B×320×1×256 | B×320×T×256 | B×320×T | B×960×16×16 |
+| High | B×192×1×4096 | B×192×T×4096 | B×192×T | B×576×64×64 |
+
+其中 `T<=8`，Softmax 仅沿 T。C 不被拆成旧空间 Attention 的 heads，S 是特征维，
+**不拼接 T×S Token，不循环 T 次做独立 SDPA，不使用 window/global-pool 路径**。
+Q/K/V 前的 1×1 卷积和双视角输出融合负责通道混合；算子本身按通道独立计算时间权重，
+每个通道的 S 个位置共享同一组权重，不能直接匹配跨帧的不同空间坐标。
+
+新路径**不保存、不读取历史 RGB**。缓存只含两视角的 latent/low/high 和 episode/frame 身份，
+严格 detach+clone，验证连续性并隔离旧状态。最终重建 RGB 及训练 MSE/PSNR 正常保留。
+没有 Age Embedding、时间 bias 或空间 relative MLP；无时间编码时，K/V 时间同步重排
+不会改变 Attention 结果。T=1 的时间 Softmax 恒为1，不能认为此时 QK 学到了时间选择。
+状态乱序仍被解码器拒绝，这与注意力算子的置换性质是两件事。
+
+```sh
+# 小规模 CPU 功能示例；不代表启动完整数据训练。
+OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 CUDA_VISIBLE_DEVICES='' \
+  python tools/smoke_decoder_v5.py --decoder-config tri_temporal1_t8 --frames 3 --size 64
+```
+
+新实验用 `DualViewCodec(decoder_config='tri_temporal1_t8')`，或在训练入口显式指定同名配置。
+`branch_mask=(True,False,True)` 等可用于三分支消融。
+从旧结构迁移使用 `--migrate-from`、完整迁移报告和全新优化器；`--resume` 会拒绝不同配置。
+旧 `baseline`、`vts8/vts16`、`tri_fusion8` 均保持原含义，默认配置仍为 vts8。
+本轮没有改动 Encoder（上轮已满足前三级GELU/末级无激活）、Gain、Hyperprior、封包及RD loss；
+新 Decoder 主干仍为三个 GELU。旧版本的速度/画质记录不能当作本配置结果。
 
 `model.train()` 后调用与上述相同参数的 `model(main, wrist, state=..., ...)`，
 返回两路重建、`likelihoods`、`estimated_bpp` 与新的 state。可构造

@@ -16,7 +16,7 @@ from compressai.layers import GDN
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from compress.decoder import EfficientAttention
-from compress.decoder_v5 import CONFIGS,ViewTemporalSpatialAttention
+from compress.decoder_v5 import CONFIGS,ViewTemporalSpatialAttention,DualViewTimeAttention
 from compress.dual_view_codec import DualViewCodec
 from compress.lightweight_encoder import ImageGeometry
 
@@ -29,7 +29,7 @@ def cache_bytes(state):
 
 
 def count_macs(model,fn):
-    counts=dict(convolution=0,transposed_convolution=0,gdn=0,linear=0,factorized_attention=0,sdpa=0)
+    counts=dict(convolution=0,transposed_convolution=0,gdn=0,linear=0,factorized_attention=0,sdpa=0,temporal_axis_attention=0)
     handles=[];originals=[]
     def hook(m,inputs,output):
         x=inputs[0]
@@ -40,8 +40,13 @@ def count_macs(model,fn):
         elif isinstance(m,EfficientAttention):
             refs=inputs[1] if isinstance(inputs[1],tuple) else (inputs[1],)
             counts['factorized_attention']+=x.shape[0]*m.key_channels*m.value_channels//m.head_count*(x.shape[-2]*x.shape[-1]+sum(r.shape[-2]*r.shape[-1] for r in refs))
+        elif isinstance(m,DualViewTimeAttention):
+            references=inputs[1]
+            if references and references.get('main'):
+                # QK and AV for two reference views; C independent time groups.
+                counts['temporal_axis_attention']+=4*x.numel()*min(len(references['main']),m.history_size)
     for module in model.modules():
-        if isinstance(module,(nn.Conv2d,nn.ConvTranspose2d,GDN,nn.Linear,EfficientAttention)):
+        if isinstance(module,(nn.Conv2d,nn.ConvTranspose2d,GDN,nn.Linear,EfficientAttention,DualViewTimeAttention)):
             handles.append(module.register_forward_hook(hook))
         if isinstance(module,ViewTemporalSpatialAttention):
             original=module._attend
