@@ -25,7 +25,7 @@ def parameter_count(m):return sum(p.numel() for p in m.parameters())
 
 
 def cache_bytes(state):
-    return sum(t.numel()*t.element_size() for e in state.history for t in vars(e).values())
+    return sum(t.numel()*t.element_size() for e in state.history for t in vars(e).values() if isinstance(t, torch.Tensor))
 
 
 def count_macs(model,fn):
@@ -64,7 +64,9 @@ def case(config,samples):
     geometry=ImageGeometry((256,256),(256,256))
     first=decoder(main,wrist,geometry,geometry)
     entry=first['state'].history[-1]
-    history=tuple(replace(entry,**{f.name:getattr(entry,f.name).clone() for f in fields(entry)}) for _ in range(decoder.history_size))
+    history=tuple(replace(entry,**{f.name:(getattr(entry,f.name).clone() if isinstance(getattr(entry,f.name),torch.Tensor)
+                                         else index if f.name=='frame_index' else getattr(entry,f.name))
+                                 for f in fields(entry)}) for index in range(decoder.history_size))
     state=replace(first['state'],next_frame=decoder.history_size,history=history)
     fn=lambda:decoder(main,wrist,geometry,geometry,state=state,frame_index=decoder.history_size)
     fn();timings=[]
@@ -75,6 +77,10 @@ def case(config,samples):
                 analysis=parameter_count(model.analysis),decoder=parameter_count(decoder),
                 jct_low=parameter_count(decoder.atten_3),jct_high=parameter_count(decoder.atten_4))
     params['temporal']=sum(parameter_count(getattr(decoder,k)) for k in ('vts_low','vts_high')) if hasattr(decoder,'vts_low') else sum(p.numel() for n,p in decoder.named_parameters() if n.startswith(('temporal','content','history_')))
+    if hasattr(decoder, 'short_low'):
+        params['short_temporal'] = sum(parameter_count(getattr(decoder, k)) for k in ('short_low', 'short_high'))
+        params['fusion'] = sum(parameter_count(getattr(decoder, k)) for k in ('fusion_low', 'fusion_high'))
+        params['temporal'] += params['short_temporal']
     return dict(config=config,history=decoder.history_size,parameters=params,
                 cache_bytes=cache_bytes(state),median_ms=statistics.median(timings),samples_ms=timings,
                 nominal_macs=count_macs(decoder,fn),peak_cpu_process_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024,

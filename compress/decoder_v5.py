@@ -24,6 +24,7 @@ CONFIGS = {
     'long-history': (320, 192, 8, 'efficient'),
     'vts8': (320, 192, 8, 'vts'),
     'vts16': (320, 192, 16, 'vts'),
+    'tri_fusion8': (320, 192, 8, 'tri_fusion'),
 }
 
 
@@ -288,6 +289,11 @@ def build_decoder(config='vts8', history_size=None, **overrides):
     if config=='baseline':
         if overrides:raise ValueError('Legacy baseline does not accept V5 overrides')
         return SpatioTemporalDecoder(history_size)
+    if config == 'tri_fusion8':
+        from .decoder_tri_fusion import ThreeBranchDecoder
+        settings = dict(M=M, N=N, history_size=history_size)
+        settings.update(overrides)
+        return ThreeBranchDecoder(**settings)
     settings=dict(M=M,N=N,history_size=history_size,temporal=temporal)
     settings.update(overrides)
     return SpatioTemporalDecoderV5(**settings)
@@ -311,7 +317,10 @@ def migrate_checkpoint(state_dict, target, *, copy_compatible_decoder=True):
         elif copy_compatible_decoder and key in state_dict and value.shape==state_dict[key].shape:
             initialized[key]=state_dict[key].detach().clone();report['copied_decoder'].append(key)
         else:report['initialized_decoder'].append(key)
-    report['discarded_source']=[k for k in state_dict if k not in initialized or state_dict[k].shape!=initialized[k].shape]
+    copied = set(report['copied_analysis'] + report['copied_decoder'])
+    report['discarded_source']=[k for k in state_dict if k not in copied]
     report['restart_history_from_frame_zero']=True
     report['rebuild_optimizer']=True
+    report['analysis_semantics']='Final encoder GELU removed; copied tensors do not preserve old latent/bitstream semantics.'
+    report['decoder_semantics']='Same-name, same-shape tensors only; new branches/fusion initialized, removed IGDN discarded.'
     return initialized,report

@@ -64,9 +64,12 @@ class EncoderAcceptance(unittest.TestCase):
 
     def test_structure_and_forward_backward(self):
         for i, stage in enumerate(self.encoder.stages):
-            self.assertEqual(len(stage), 3)
+            self.assertEqual(len(stage), 3 if i < 3 else 2)
             self.assertIsInstance(stage[0], DSConv)
-            self.assertIsInstance(stage[2], nn.GELU)
+            if i < 3:
+                self.assertIsInstance(stage[2], nn.GELU)
+            else:
+                self.assertIsInstance(stage[-1], nn.Conv2d)
             cin, cout = self.encoder.channels[i:i + 2]
             self.assertEqual(stage[0].depthwise.groups, cin)
             self.assertEqual(stage[0].depthwise.stride, (2, 2))

@@ -7,6 +7,10 @@
 V5 已完成 CPU 功能、梯度和开销验证，并已启动 LIBERO 十轮训练；尚无最终评估结果，不声称 PSNR/BPP 提升。
 完整结构、六组消融配置、迁移与实测见 [Decoder-v5 报告](reports/decoder_v5_architecture.md)。
 
+本版新增可选 `tri_fusion8`，见 [三分支结构报告](reports/tri_fusion_decoder_architecture.md)。
+Encoder 末层 GELU 已移除，影响所有当前配置；下文历史版本间的字节一致性结论仅适用于
+当时相同的 Encoder 语义，不适用于跨本次激活变更的比较。新结构尚未做正式训练或 RD 评估。
+
 ## 目录与数据流
 
 ```text
@@ -16,6 +20,7 @@ compress/
   gain.py                 y/z 各自可学习 Gain/Inverse Gain、8 档与连续指数插值
   decoder.py              双尺度 LDMIC JCT、双路独立时间残差、Concat 融合与帧龄编码
   decoder_v5.py           可配置宽 Decoder、双尺度 View×Time×Space Attention、显式迁移
+  decoder_tri_fusion.py   同尺度 Spatial/Short/VTS 三路并行、逐相机 Concat 融合
   dual_view_codec.py      完整双视角前向、帧码流封装与解码入口
  tests/                   Codec CPU 单元/集成测试及固定官方 oracle/旧基线
  tools/smoke_dual_view_codec.py  外部 RGB 图片的冒烟/小规模过拟合脚本
@@ -244,11 +249,45 @@ tensorboard --logdir outputs/vts8_epochs10/tensorboard --port 6006
 每轮遍历所有轨迹，轨迹顺序随机、内部帧顺序不变，轨迹之间清空历史。
 输出还包括 `metrics.csv`、`epochs.csv` 和每轮结束更新的 `latest.pt`。
 `--steps` 可覆盖总步数用于短测；截断轮在 `epochs.csv` 中标记 `complete=False`。
-`--resume` 严格加载同结构、同档位权重与优化器，在新输出目录从新一轮开始，
+`--resume` 严格加载同结构、同档位、同 Encoder 激活语义的权重与优化器，在新输出目录从新一轮开始，
 步数和曲线重新计数；默认六档 paper objective 不兼容旧八档 checkpoint。
 需要旧 V4 时显式指定 `--decoder-config baseline`。
 输入目录直接包含 HDF5 文件，每个 demo 的两路 RGB 均为 128×128；
 Parquet 数据须先转换成该格式。训练统计来自训练集，不是验证指标。
+
+### 三分支并行 Decoder：`tri_fusion8`
+
+新结构须显式选择 `--decoder-config tri_fusion8`；API 和训练入口的默认配置仍为
+`vts8`，旧解码器保留原 IGDN 及串行结构。新配置在 1/16、1/4 两级尺度同时计算
+Spatial JCT、最近 2 帧 Efficient Temporal、最近 8 帧 VTS；三个分支均查询本级原始
+特征，各自输出增强量，沿通道拼接后通过无 bias 的 `1x1 Conv + GELU` 融合，
+最后加一次主干残差。主、腕视角分别融合，支持不同分辨率。
+
+新配置主干的三个 IGDN 改为 GELU。所有采用当前 `LightweightEncoder` 的配置均移除
+最后 stage 的 GELU；卷积参数键未变，**不代表与旧 Encoder 的 latent 或码流字节相同**。
+旧实现的精确复现应使用提交 `05a0b57a6cf05b17904ee6b810b454d3d6cc9f03`。
+
+```sh
+# CPU 功能测试，不启动正式训练；真实旧权重可选 --checkpoint /path/to/old.pt。
+OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 python tools/smoke_decoder_v5.py \
+  --decoder-config tri_fusion8 --frames 3 --size 64
+
+# 新实验显式选择新配置；GPU 使用前请检查占用并选择空闲设备。
+# device 默认为 cpu，不再隐式占用 cuda:5。此示例沿用原 HDF5 DataLoader。
+python tools/train_libero.py --data /path/to/libero_spatial_hdf5 \
+  --decoder-config tri_fusion8 --device cpu --epochs 10 \
+  --migrate-from /path/to/old_checkpoint.pt --output outputs/tri_fusion8_new
+```
+
+`--migrate-from` 显式严格迁移兼容张量，将保留、重新初始化、丢弃的键分别写入
+`migration.json`，并创建全新优化器与帧 0 历史；不支持用 `strict=False` 隐藏差异。
+没有迁移权重时省略该参数随机初始化。只有当前激活语义和同配置 checkpoint
+可使用 `--resume`。码流容器、独立相机码率、Gain 与 Hyperprior 接口未改。
+
+消融通过 `DualViewCodec(decoder_config='tri_fusion8', branch_mask=(True, False, True))`
+关闭短分支；三个布尔值依次代表 spatial/short/long。`fusion_scales=('low',)`
+只在低尺度三路融合，高尺度仅保留 Spatial JCT。消融选项参与状态签名，收发端必须一致。
+详见 [结构与验证报告](reports/tri_fusion_decoder_architecture.md)。
 
 `model.train()` 后调用与上述相同参数的 `model(main, wrist, state=..., ...)`，
 返回两路重建、`likelihoods`、`estimated_bpp` 与新的 state。可构造

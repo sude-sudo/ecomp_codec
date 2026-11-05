@@ -16,6 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from compress.dual_view_codec import DualViewCodec
+from compress.decoder_v5 import CONFIGS, migrate_checkpoint
 
 # Paper MSE multipliers, indexed here from low to high rate/quality.
 PAPER_BETAS = (0.0003, 0.001, 0.003, 0.007, 0.03, 0.05)
@@ -27,12 +28,14 @@ def main():
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--steps', type=int, default=None, help='Optional step limit; default is complete epochs')
     p.add_argument('--epochs', type=int, default=10)
-    p.add_argument('--device', default='cuda:5')
+    p.add_argument('--device', default='cpu', help='Explicitly select an available CUDA device for GPU training')
     p.add_argument('--checkpoint-every', type=int, default=1000)
     p.add_argument('--threads', type=int, default=4)
     p.add_argument('--log-every', type=int, default=10)
-    p.add_argument('--resume', type=Path)
-    p.add_argument('--decoder-config', default='vts8', choices=('baseline','wide-ldmic','wide-elic','long-history','vts8','vts16'))
+    initialization = p.add_mutually_exclusive_group()
+    initialization.add_argument('--resume', type=Path, help='Resume a checkpoint with matching architecture and encoder semantics')
+    initialization.add_argument('--migrate-from', type=Path, help='Explicit weight migration with report and fresh optimizers')
+    p.add_argument('--decoder-config', default='vts8', choices=CONFIGS)
     p.add_argument('--history-size', type=int)
     p.add_argument('--objective', choices=('paper', 'legacy'), default='paper')
     p.add_argument('--distortion-weight', type=float, default=20.)
@@ -80,10 +83,13 @@ def main():
                   bpp_target=args.bpp_target, bpp_penalty=args.bpp_penalty,
                   loss='estimated_bpp + distortion_weight * (main_mse + wrist_mse) + bpp_penalty * relu(estimated_bpp-bpp_target)^2',
                   split='none; all trajectories available to training',
-                  initialization=str(args.resume) if args.resume else 'random; ' + ('decoder-v4' if args.decoder_config=='baseline' else 'decoder-v5'),
-                  model_version='hypergain-v1/' + ('decoder-v4' if args.decoder_config=='baseline' else 'decoder-v5'),
+                  initialization=str(args.resume or args.migrate_from) if (args.resume or args.migrate_from) else 'random; ' + ('decoder-v4' if args.decoder_config=='baseline' else 'decoder-v5'),
+                  encoder_output_activation='none',
+                  model_version='hypergain-v1/' + ('decoder-tri-fusion-v1' if args.decoder_config=='tri_fusion8'
+                                                 else 'decoder-v4' if args.decoder_config=='baseline' else 'decoder-v5'),
                   decoder_config=args.decoder_config,
-                  history_size=args.history_size if args.history_size is not None else (16 if args.decoder_config=='vts16' else 8 if args.decoder_config in ('vts8','long-history') else 2),
+                  history_size=args.history_size if args.history_size is not None else CONFIGS[args.decoder_config][2],
+                  short_history_size=2 if args.decoder_config=='tri_fusion8' else None,
                   source_commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=Path(__file__).resolve().parents[1],text=True).strip(),
                   sequence='shuffle trajectories, chronological frames, detached causal history')
     if paper:
@@ -94,12 +100,22 @@ def main():
     (args.output / 'config.json').write_text(json.dumps(config, indent=2))
     print(json.dumps(config), flush=True)
     model = DualViewCodec(levels=levels, decoder_config=args.decoder_config, history_size=args.history_size).to(device).train()
+    if args.migrate_from:
+        saved = torch.load(args.migrate_from, map_location=device, weights_only=False)
+        weights, report = migrate_checkpoint(saved['model'], model)
+        model.load_state_dict(weights, strict=True)
+        (args.output / 'migration.json').write_text(json.dumps(report, indent=2))
+        print('MIGRATED weights; fresh optimizers; history starts at frame 0', flush=True)
+        del saved, weights
     quantiles = model.analysis.hyperprior.entropy_bottleneck.quantiles
     params = [v for v in model.parameters() if v is not quantiles]
     optimizer = torch.optim.Adam(params, lr=config['lr'])
     aux_optimizer = torch.optim.Adam([quantiles], lr=config['aux_lr'])
     if args.resume:
         saved = torch.load(args.resume, map_location=device, weights_only=False)
+        if (saved.get('config', {}).get('encoder_output_activation') != 'none'
+                or saved.get('config', {}).get('decoder_config') != args.decoder_config):
+            raise ValueError('Checkpoint architecture/encoder semantics differ; use --migrate-from with fresh optimizers')
         model.load_state_dict(saved['model'], strict=True)
         optimizer.load_state_dict(saved['optimizer'])
         aux_optimizer.load_state_dict(saved['aux_optimizer'])
@@ -135,7 +151,9 @@ def main():
                        'decoder.atten_3', 'decoder.atten_4', 'decoder.decoder_1',
                        'decoder.decoder_2', 'decoder.temporal.', 'decoder.temporal_project.',
                        'decoder.temporal_wrist.', 'decoder.temporal_project_wrist.',
-                       'decoder.history_fuse.', 'decoder.temporal_age_embedding.'):
+                       'decoder.history_fuse.', 'decoder.temporal_age_embedding.',
+                       'decoder.short_low.', 'decoder.short_high.', 'decoder.vts_low.',
+                       'decoder.vts_high.', 'decoder.fusion_low.', 'decoder.fusion_high.'):
             values = [(value.detach() - tracked[name]).abs().max().item()
                       for name, value in model.named_parameters() if name.startswith(prefix)]
             changes[prefix] = max(values) if values else None

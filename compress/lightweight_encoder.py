@@ -88,9 +88,9 @@ class LightweightEncoder(nn.Module):
             nn.Sequential(
                 DSConv(cin, cout),
                 nn.Conv2d(cout, cout, 3, padding=1, groups=cout),
-                nn.GELU(),
+                *([nn.GELU()] if i < len(self.channels) - 2 else []),
             )
-            for cin, cout in zip(self.channels[:-1], self.channels[1:])
+            for i, (cin, cout) in enumerate(zip(self.channels[:-1], self.channels[1:]))
         ))
 
     def forward(self, image: Tensor) -> Tensor:
